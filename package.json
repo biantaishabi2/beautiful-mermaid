@@ -42,6 +42,7 @@
     "sequence-diagram",
     "class-diagram",
     "er-diagram",
+    "xychart",
     "state-diagram",
     "visualization",
     "theming"
@@ -54,6 +55,7 @@
     "bench": "bun run bench.ts",
     "build": "tsup",
     "build:samples": "bun run index.ts && mkdir -p samples && mv index.html samples/ && cp -r public/* samples/",
+    "xychart-test": "bun run xychart-test.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
