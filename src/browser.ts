@@ -11,7 +11,9 @@ import { renderMermaidSVGAsync } from './index.ts'
 import { renderMermaidASCII, diagramColorsToAsciiTheme } from './ascii/index.ts'
 import { THEMES } from './theme.ts'
 
-;(window as unknown as Record<string, unknown>).__mermaid = {
+declare const window: unknown
+
+;(window as Record<string, unknown>).__mermaid = {
   renderMermaidSVGAsync,
   renderMermaidASCII,
   diagramColorsToAsciiTheme,

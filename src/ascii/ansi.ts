@@ -10,6 +10,8 @@ import type { CharRole, AsciiTheme, ColorMode } from './types.ts'
 import type { DiagramColors } from '../theme.ts'
 import { MIX } from '../theme.ts'
 
+declare const document: unknown
+
 // ============================================================================
 // Default theme — matches SVG theme colors for consistency
 // ============================================================================
