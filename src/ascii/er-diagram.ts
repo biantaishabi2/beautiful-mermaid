@@ -11,9 +11,16 @@
 
 import { parseErDiagram } from '../er/parser.ts'
 import type { ErDiagram, ErEntity, ErAttribute, Cardinality } from '../er/types.ts'
-import type { Canvas, AsciiConfig } from './types.ts'
-import { mkCanvas, canvasToString, increaseSize } from './canvas.ts'
+import type { Canvas, AsciiConfig, RoleCanvas, CharRole, AsciiTheme, ColorMode } from './types.ts'
+import { mkCanvas, mkRoleCanvas, canvasToString, increaseSize, increaseRoleCanvasSize, setRole } from './canvas.ts'
 import { drawMultiBox } from './draw.ts'
+import { splitLines } from './multiline-utils.ts'
+
+/** Classify a character from a box drawing as 'border' or 'text'. */
+function classifyBoxChar(ch: string): CharRole {
+  if (/^[┌┐└┘├┤┬┴┼│─╭╮╰╯+\-|]$/.test(ch)) return 'border'
+  return 'text'
+}
 
 // ============================================================================
 // Entity box content
@@ -27,7 +34,8 @@ function formatAttribute(attr: ErAttribute): string {
 
 /** Build sections for an entity box: [header], [attributes] */
 function buildEntitySections(entity: ErEntity): string[][] {
-  const header = [entity.label]
+  // Support multi-line entity names
+  const header = splitLines(entity.label)
   const attrs = entity.attributes.map(formatAttribute)
   if (attrs.length === 0) return [header]
   return [header, attrs]
@@ -39,28 +47,33 @@ function buildEntitySections(entity: ErEntity): string[][] {
 
 /**
  * Returns the ASCII/Unicode characters for a crow's foot cardinality marker.
- * These are drawn near the endpoint of a relationship line.
+ * Markers are drawn adjacent to entity boxes at relationship endpoints.
  *
- * Cardinality markers (horizontal direction):
- *   one:       ──║──   or  --||--
- *   zero-one:  ──o║──  or  --o|--
- *   many:      ──╢──   or  --<|--  (or }|)
- *   zero-many: ──o╢──  or  --o<--  (or o{)
+ * Standard ER notation:
+ *   one:       ─┤├─   perpendicular line (exactly one)
+ *   zero-one:  ─○┤─   circle + perpendicular (zero or one)
+ *   many:      ─<>─   crow's foot (one or more)
+ *   zero-many: ─○<─   circle + crow's foot (zero or more)
+ *
+ * @param card - The cardinality type
+ * @param useAscii - Use ASCII-only characters
+ * @param isRight - True if this marker is on the right side of the relationship
  */
-function getCrowsFootChars(card: Cardinality, useAscii: boolean): string {
+function getCrowsFootChars(card: Cardinality, useAscii: boolean, isRight = false): string {
   if (useAscii) {
     switch (card) {
-      case 'one':       return '||'
+      case 'one':       return '|'
       case 'zero-one':  return 'o|'
-      case 'many':      return '}|'
-      case 'zero-many': return 'o{'
+      case 'many':      return isRight ? '<' : '>'
+      case 'zero-many': return isRight ? 'o<' : '>o'
     }
   } else {
+    // Use cleaner Unicode characters
     switch (card) {
-      case 'one':       return '║'
-      case 'zero-one':  return 'o║'
-      case 'many':      return '╟'
-      case 'zero-many': return 'o╟'
+      case 'one':       return '│'
+      case 'zero-one':  return '○│'
+      case 'many':      return isRight ? '╟' : '╢'
+      case 'zero-many': return isRight ? '○╟' : '╢○'
     }
   }
 }
@@ -79,15 +92,71 @@ interface PlacedEntity {
 }
 
 // ============================================================================
+// Connected Component Detection
+// ============================================================================
+
+/**
+ * Find connected components in the ER diagram using DFS.
+ * Treats relationships as undirected edges for connectivity.
+ *
+ * Returns an array of entity ID sets, one per connected component.
+ */
+function findConnectedComponents(diagram: ErDiagram): Set<string>[] {
+  const visited = new Set<string>()
+  const components: Set<string>[] = []
+
+  // Build undirected adjacency list from relationships
+  const neighbors = new Map<string, Set<string>>()
+  for (const ent of diagram.entities) {
+    neighbors.set(ent.id, new Set())
+  }
+  for (const rel of diagram.relationships) {
+    neighbors.get(rel.entity1)?.add(rel.entity2)
+    neighbors.get(rel.entity2)?.add(rel.entity1)
+  }
+
+  // DFS to find each component
+  function dfs(startId: string, component: Set<string>): void {
+    const stack = [startId]
+    while (stack.length > 0) {
+      const nodeId = stack.pop()!
+      if (visited.has(nodeId)) continue
+
+      visited.add(nodeId)
+      component.add(nodeId)
+
+      for (const neighbor of neighbors.get(nodeId) ?? []) {
+        if (!visited.has(neighbor)) {
+          stack.push(neighbor)
+        }
+      }
+    }
+  }
+
+  // Find all components
+  for (const ent of diagram.entities) {
+    if (!visited.has(ent.id)) {
+      const component = new Set<string>()
+      dfs(ent.id, component)
+      if (component.size > 0) {
+        components.push(component)
+      }
+    }
+  }
+
+  return components
+}
+
+// ============================================================================
 // Layout and rendering
 // ============================================================================
 
 /**
  * Render a Mermaid ER diagram to ASCII/Unicode text.
  *
- * Pipeline: parse → build boxes → grid layout → draw boxes → draw relationships → string.
+ * Pipeline: parse → build boxes → component-aware layout → draw boxes → draw relationships → string.
  */
-export function renderErAscii(text: string, config: AsciiConfig): string {
+export function renderErAscii(text: string, config: AsciiConfig, colorMode?: ColorMode, theme?: AsciiTheme): string {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
   const diagram = parseErDiagram(lines)
 
@@ -96,13 +165,16 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
   const useAscii = config.useAscii
   const hGap = 6  // horizontal gap between entity boxes
   const vGap = 4  // vertical gap between rows (for relationship lines)
+  const componentGap = 6  // vertical gap between disconnected components
 
   // --- Build entity box dimensions ---
   const entitySections = new Map<string, string[][]>()
   const entityBoxW = new Map<string, number>()
   const entityBoxH = new Map<string, number>()
+  const entityById = new Map<string, ErEntity>()
 
   for (const ent of diagram.entities) {
+    entityById.set(ent.id, ent)
     const sections = buildEntitySections(ent)
     entitySections.set(ent.id, sections)
 
@@ -120,41 +192,54 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
     entityBoxH.set(ent.id, boxH)
   }
 
-  // --- Layout: place entities in rows ---
-  // Use a simple grid: max N entities per row (based on count).
-  // Entities involved in relationships are placed adjacent when possible.
-  const maxPerRow = Math.max(2, Math.ceil(Math.sqrt(diagram.entities.length)))
+  // --- Find connected components ---
+  const components = findConnectedComponents(diagram)
 
+  // --- Layout: place each component, then stack components vertically ---
   const placed = new Map<string, PlacedEntity>()
-  let currentX = 0
   let currentY = 0
-  let maxRowH = 0
-  let colCount = 0
 
-  for (const ent of diagram.entities) {
-    const w = entityBoxW.get(ent.id)!
-    const h = entityBoxH.get(ent.id)!
+  for (const component of components) {
+    // Get entities in this component (preserve original order for consistency)
+    const componentEntities = diagram.entities.filter(e => component.has(e.id))
 
-    if (colCount >= maxPerRow) {
-      // Wrap to next row
-      currentY += maxRowH + vGap
-      currentX = 0
-      maxRowH = 0
-      colCount = 0
+    // Layout entities within this component horizontally
+    // Use sqrt-based row limit for larger components
+    const maxPerRow = Math.max(2, Math.ceil(Math.sqrt(componentEntities.length)))
+
+    let currentX = 0
+    let maxRowH = 0
+    let colCount = 0
+    const componentStartY = currentY
+
+    for (const ent of componentEntities) {
+      const w = entityBoxW.get(ent.id)!
+      const h = entityBoxH.get(ent.id)!
+
+      if (colCount >= maxPerRow) {
+        // Wrap to next row within this component
+        currentY += maxRowH + vGap
+        currentX = 0
+        maxRowH = 0
+        colCount = 0
+      }
+
+      placed.set(ent.id, {
+        entity: ent,
+        sections: entitySections.get(ent.id)!,
+        x: currentX,
+        y: currentY,
+        width: w,
+        height: h,
+      })
+
+      currentX += w + hGap
+      maxRowH = Math.max(maxRowH, h)
+      colCount++
     }
 
-    placed.set(ent.id, {
-      entity: ent,
-      sections: entitySections.get(ent.id)!,
-      x: currentX,
-      y: currentY,
-      width: w,
-      height: h,
-    })
-
-    currentX += w + hGap
-    maxRowH = Math.max(maxRowH, h)
-    colCount++
+    // Move to next component row (add gap between components)
+    currentY += maxRowH + componentGap
   }
 
   // --- Create canvas ---
@@ -168,6 +253,15 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
   totalH += 2
 
   const canvas = mkCanvas(totalW - 1, totalH - 1)
+  const rc = mkRoleCanvas(totalW - 1, totalH - 1)
+
+  /** Set a character on the canvas and track its role. */
+  function setC(x: number, y: number, ch: string, role: CharRole): void {
+    if (x >= 0 && x < canvas.length && y >= 0 && y < (canvas[0]?.length ?? 0)) {
+      canvas[x]![y] = ch
+      setRole(rc, x, y, role)
+    }
+  }
 
   // --- Draw entity boxes ---
   for (const p of placed.values()) {
@@ -179,7 +273,7 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
           const cx = p.x + bx
           const cy = p.y + by
           if (cx < totalW && cy < totalH) {
-            canvas[cx]![cy] = ch
+            setC(cx, cy, ch, classifyBoxChar(ch))
           }
         }
       }
@@ -224,33 +318,41 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
 
       // Draw horizontal line
       for (let x = startX; x <= endX; x++) {
-        if (x < totalW) canvas[x]![lineY] = lineH
+        setC(x, lineY, lineH, 'line')
       }
 
       // Draw crow's foot markers at endpoints
-      const leftChars = getCrowsFootChars(leftCard, useAscii)
+      // Left marker (at left entity's right edge) - isRight=false
+      const leftChars = getCrowsFootChars(leftCard, useAscii, false)
       for (let i = 0; i < leftChars.length; i++) {
-        const mx = startX + i
-        if (mx < totalW) canvas[mx]![lineY] = leftChars[i]!
+        setC(startX + i, lineY, leftChars[i]!, 'arrow')
       }
 
-      const rightChars = getCrowsFootChars(rightCard, useAscii)
+      // Right marker (at right entity's left edge) - isRight=true
+      const rightChars = getCrowsFootChars(rightCard, useAscii, true)
       for (let i = 0; i < rightChars.length; i++) {
-        const mx = endX - rightChars.length + 1 + i
-        if (mx >= 0 && mx < totalW) canvas[mx]![lineY] = rightChars[i]!
+        setC(endX - rightChars.length + 1 + i, lineY, rightChars[i]!, 'arrow')
       }
 
-      // Relationship label centered in the gap between the two entities, above the line.
+      // Relationship label centered in the gap between the two entities, below the line.
       // Clamp label to the gap region [startX, endX] to avoid overwriting box borders.
+      // Supports multi-line labels.
       if (rel.label) {
+        const lines = splitLines(rel.label)
         const gapMid = Math.floor((startX + endX) / 2)
-        const labelStart = Math.max(startX, gapMid - Math.floor(rel.label.length / 2))
-        const labelY = lineY - 1
-        if (labelY >= 0) {
-          for (let i = 0; i < rel.label.length; i++) {
+
+        // Place lines below the relationship line (lineY + 1, lineY + 2, ...)
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+          const line = lines[lineIdx]!
+          const labelStart = Math.max(startX, gapMid - Math.floor(line.length / 2))
+          const labelY = lineY + 1 + lineIdx
+          // Ensure canvas is tall enough
+          increaseSize(canvas, Math.max(labelStart + line.length, 1), Math.max(labelY + 1, 1))
+          increaseRoleCanvasSize(rc, Math.max(labelStart + line.length, 1), Math.max(labelY + 1, 1))
+          for (let i = 0; i < line.length; i++) {
             const lx = labelStart + i
-            if (lx >= startX && lx <= endX && lx < totalW) {
-              canvas[lx]![labelY] = rel.label[i]!
+            if (lx >= startX && lx <= endX) {
+              setC(lx, labelY, line[i]!, 'text')
             }
           }
         }
@@ -268,7 +370,7 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
 
       // Vertical line
       for (let y = startY; y <= endY; y++) {
-        if (y < totalH) canvas[lineX]![y] = lineV
+        setC(lineX, y, lineV, 'line')
       }
 
       // If horizontal offset needed, add a horizontal segment
@@ -279,44 +381,49 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
         const lx = Math.min(lineX, lowerCX)
         const rx = Math.max(lineX, lowerCX)
         for (let x = lx; x <= rx; x++) {
-          if (x < totalW && midY < totalH) canvas[x]![midY] = lineH
+          setC(x, midY, lineH, 'line')
         }
         // Vertical from midY to lower entity
         for (let y = midY + 1; y <= endY; y++) {
-          if (y < totalH) canvas[lowerCX]![y] = lineV
+          setC(lowerCX, y, lineV, 'line')
         }
       }
 
       // Crow's foot markers (vertical direction)
-      // Place markers near the entity connection points
-      const upperChars = getCrowsFootChars(upperCard, useAscii)
-      if (startY < totalH) {
-        for (let i = 0; i < upperChars.length; i++) {
-          const mx = lineX - Math.floor(upperChars.length / 2) + i
-          if (mx >= 0 && mx < totalW) canvas[mx]![startY] = upperChars[i]!
-        }
+      // Upper marker (at upper entity's bottom edge) - treat as source side (isRight=false)
+      const upperChars = getCrowsFootChars(upperCard, useAscii, false)
+      for (let i = 0; i < upperChars.length; i++) {
+        setC(lineX - Math.floor(upperChars.length / 2) + i, startY, upperChars[i]!, 'arrow')
       }
 
+      // Lower marker (at lower entity's top edge) - treat as target side (isRight=true)
       const targetX = lineX !== lowerCX ? lowerCX : lineX
-      const lowerChars = getCrowsFootChars(lowerCard, useAscii)
-      if (endY >= 0 && endY < totalH) {
-        for (let i = 0; i < lowerChars.length; i++) {
-          const mx = targetX - Math.floor(lowerChars.length / 2) + i
-          if (mx >= 0 && mx < totalW) canvas[mx]![endY] = lowerChars[i]!
-        }
+      const lowerChars = getCrowsFootChars(lowerCard, useAscii, true)
+      for (let i = 0; i < lowerChars.length; i++) {
+        setC(targetX - Math.floor(lowerChars.length / 2) + i, endY, lowerChars[i]!, 'arrow')
       }
 
       // Relationship label — placed to the right of the vertical line at the midpoint.
       // We expand the canvas as needed since labels can extend beyond the initial bounds.
+      // Supports multi-line labels.
       if (rel.label) {
+        const lines = splitLines(rel.label)
         const midY = Math.floor((startY + endY) / 2)
-        const labelX = lineX + 2
-        if (midY >= 0) {
-          for (let i = 0; i < rel.label.length; i++) {
-            const lx = labelX + i
-            if (lx >= 0) {
-              increaseSize(canvas, lx + 1, midY + 1)
-              canvas[lx]![midY] = rel.label[i]!
+        // Center lines vertically around midY
+        const startLabelY = midY - Math.floor((lines.length - 1) / 2)
+
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+          const line = lines[lineIdx]!
+          const labelX = lineX + 2
+          const y = startLabelY + lineIdx
+          if (y >= 0) {
+            for (let i = 0; i < line.length; i++) {
+              const lx = labelX + i
+              if (lx >= 0) {
+                increaseSize(canvas, lx + 1, y + 1)
+                increaseRoleCanvasSize(rc, lx + 1, y + 1)
+                setC(lx, y, line[i]!, 'text')
+              }
             }
           }
         }
@@ -324,5 +431,5 @@ export function renderErAscii(text: string, config: AsciiConfig): string {
     }
   }
 
-  return canvasToString(canvas)
+  return canvasToString(canvas, { roleCanvas: rc, colorMode, theme })
 }

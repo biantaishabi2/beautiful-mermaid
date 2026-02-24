@@ -1,7 +1,7 @@
 /**
- * Generates index.html showcasing all @craft-agent/mermaid rendering capabilities.
+ * Generates index.html showcasing all beautiful-mermaid rendering capabilities.
  *
- * Usage: bun run packages/mermaid/index.ts
+ * Usage: bun run index.ts
  *
  * This file doubles as a **visual test suite** — every supported feature,
  * shape, edge type, block construct, and theme variant is exercised by at
@@ -228,9 +228,10 @@ async function generateHtml(): Promise<string> {
         <p class="description">${formatDescription(sample.description)}</p>
       </div>
       <div class="sample-content">
-        <div class="source-panel">
+        <div class="source-panel" id="source-panel-${i}">
           ${highlightedSources[i]}
           ${sample.options ? `<div class="options"><strong>Options:</strong> <code>${escapeHtml(JSON.stringify(sample.options))}</code></div>` : ''}
+          <button class="edit-btn" data-sample="${i}">Edit</button>
         </div>
         <div class="svg-panel" id="svg-panel-${i}" data-sample-bg="${bg}">
           <div class="svg-container" id="svg-${i}">
@@ -260,18 +261,20 @@ async function generateHtml(): Promise<string> {
   <meta name="theme-color" id="theme-color-meta" content="#f9f9fa" />
   <title>Beautiful Mermaid — Mermaid Rendering, Made Beautiful</title>
   <meta name="description" content="Open source diagram rendering library built for the AI era. Ultra-fast, fully themeable, outputs to SVG and ASCII. Supports Flowchart, State, Sequence, Class, and ER diagrams." />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/mermaid/favicon.svg" />
+  <link rel="icon" type="image/x-icon" href="/mermaid/favicon.ico" />
+  <link rel="apple-touch-icon" href="/mermaid/apple-touch-icon.png" />
   <meta property="og:title" content="Beautiful Mermaid" />
   <meta property="og:description" content="Open source diagram rendering library built for the AI era. Ultra-fast, fully themeable, outputs to SVG and ASCII." />
-  <meta property="og:image" content="https://lukilabs.github.io/beautiful-mermaid/og-image.png" />
+  <meta property="og:image" content="https://agents.craft.do/mermaid/og-image.png" />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://lukilabs.github.io/beautiful-mermaid" />
+  <meta property="og:url" content="https://agents.craft.do/mermaid" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Beautiful Mermaid" />
   <meta name="twitter:description" content="Mermaid rendering, made beautiful. Ultra-fast, fully themeable, outputs to SVG and ASCII." />
-  <meta name="twitter:image" content="https://lukilabs.github.io/beautiful-mermaid/og-image.png" />
+  <meta name="twitter:image" content="https://agents.craft.do/mermaid/og-image.png" />
+  <!-- Plausible Analytics -->
+  <script defer data-domain="agents.craft.do/mermaid" src="https://plausible.io/js/script.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -303,12 +306,20 @@ async function generateHtml(): Promise<string> {
       line-height: 1.6;
       margin: 0;
       transition: background 0.2s, color 0.2s;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     .content-wrapper {
       max-width: 1440px;
       margin: 0 auto;
       padding: 2rem;
       padding-top: 0;
+    }
+    @media (max-width: 768px) {
+      .content-wrapper {
+        padding: 1rem;
+        padding-top: 0;
+      }
     }
     @media (min-width: 1000px) {
       .content-wrapper {
@@ -349,6 +360,11 @@ async function generateHtml(): Promise<string> {
       align-items: center;
       gap: 0.75rem;
       overflow: visible;
+    }
+    @media (max-width: 768px) {
+      .theme-bar {
+        padding: 0.5rem 1rem;
+      }
     }
     .theme-label {
       font-size: 0.7rem;
@@ -578,6 +594,13 @@ async function generateHtml(): Promise<string> {
       height: 14px;
       flex-shrink: 0;
     }
+    /* Hide contents button on smaller screens */
+    @media (max-width: 1024px) {
+      .contents-btn,
+      .mega-menu {
+        display: none !important;
+      }
+    }
     /* -- Craft shadow + radius utilities -- */
     .rounded-6px { border-radius: 6px; }
     .shadow-minimal {
@@ -617,13 +640,14 @@ async function generateHtml(): Promise<string> {
       top: calc(100% + 6px);
       left: 50%;
       transform: translateX(-50%);
-      max-width: 1180px;
+      max-width: min(1180px, calc(100vw - 2rem));
       width: max-content;
       background: var(--t-bg);
       border-radius: 12px;
       padding: 1.5rem 2rem;
       max-height: 70vh;
       overflow-y: auto;
+      overflow-x: hidden;
       z-index: 998;
     }
     .mega-menu.open {
@@ -632,6 +656,11 @@ async function generateHtml(): Promise<string> {
     .toc-grid {
       columns: 4;
       column-gap: 2rem;
+    }
+    @media (max-width: 1200px) {
+      .toc-grid {
+        columns: 3;
+      }
     }
     .toc-category {
       display: inline-block;
@@ -732,6 +761,7 @@ async function generateHtml(): Promise<string> {
 
     /* -- Source panel -- */
     .source-panel {
+      position: relative;
       padding: 0.75rem 1.5rem;
       border-right: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
       min-width: 0;      /* grid child: allow shrinking below content width */
@@ -815,6 +845,113 @@ async function generateHtml(): Promise<string> {
       padding: 0.15rem 0.4rem;
       border-radius: 3px;
       font-size: 0.75rem;
+    }
+
+    /* -- Edit button (subtle text link, bottom-left of source panel) -- */
+    .edit-btn {
+      position: absolute;
+      bottom: 0.75rem;
+      left: 1.5rem;
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      color: color-mix(in srgb, var(--t-fg) 35%, var(--t-bg));
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .edit-btn:hover {
+      color: var(--t-fg);
+      text-decoration: underline;
+    }
+
+    /* -- Edit dialog overlay -- */
+    .edit-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    .edit-overlay.open { display: flex; }
+    .edit-dialog {
+      background: var(--t-bg);
+      border-radius: 16px;
+      width: min(680px, calc(100vw - 3rem));
+      max-height: calc(100vh - 4rem);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .edit-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+    }
+    .edit-dialog-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--t-fg);
+    }
+    .edit-dialog-close {
+      background: none;
+      border: none;
+      font-size: 1.25rem;
+      color: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));
+      cursor: pointer;
+      padding: 0 0.25rem;
+      line-height: 1;
+    }
+    .edit-dialog-close:hover { color: var(--t-fg); }
+    .edit-dialog-textarea {
+      flex: 1;
+      min-height: 300px;
+      max-height: 60vh;
+      margin: 0;
+      padding: 1rem 1.25rem;
+      border: none;
+      outline: none;
+      resize: none;
+      background: color-mix(in srgb, var(--t-fg) 2%, var(--t-bg));
+      color: var(--t-fg);
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre;
+      tab-size: 2;
+    }
+    .edit-dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      border-top: 1px solid color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+    }
+    .edit-dialog-btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .edit-dialog-btn:hover { opacity: 0.85; }
+    .edit-dialog-cancel {
+      background: color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+      color: var(--t-fg);
+    }
+    .edit-dialog-save {
+      background: var(--t-fg);
+      color: var(--t-bg);
     }
 
     /* -- SVG panel -- */
@@ -951,7 +1088,14 @@ async function generateHtml(): Promise<string> {
     }
     .hero-buttons {
       display: flex;
-      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    @media (max-width: 768px) {
+      .hero-buttons {
+        flex-direction: column;
+      }
     }
     .hero-btn {
       display: inline-flex;
@@ -1014,6 +1158,15 @@ async function generateHtml(): Promise<string> {
       margin: 0.15rem 0;
     }
 
+    .hero-meta .meta a {
+      color: color-mix(in srgb, var(--t-fg) 50%, var(--t-bg));
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .hero-meta .meta a:hover {
+      color: var(--t-fg);
+    }
+
     /* -- Section title -- */
     .section-title {
       font-size: 1.875rem;
@@ -1073,9 +1226,9 @@ async function generateHtml(): Promise<string> {
     <div class="brand-badge-wrapper">
       <button class="brand-badge shadow-minimal" id="brand-badge-btn"><svg class="brand-logo" viewBox="0 0 299 300" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M137.879,300.001 L137.875,300.001 C62.3239,300.001 0.966154,239.232 0.0117188,163.908 L2.56478e-10,162.126 L137.879,162.126 L137.879,300.001 Z" fill="#06367A"/><path d="M137.879,0 L137.875,0 C61.729,0 0,61.729 0,137.875 L0,137.878 L137.879,137.878 L137.879,0 Z" fill="#FF51FF"/><path d="M160.558,137.883 L160.561,137.883 C236.707,137.883 298.436,76.1537 298.436,0.00758561 L298.436,0.00562043 L160.558,0.00562043 L160.558,137.883 Z" fill="#007CFF"/><path d="M160.558,162.123 L160.561,162.123 C236.112,162.123 297.471,222.891 298.426,298.216 L298.436,299.998 L160.558,299.998 L160.558,162.123 Z" fill="#0A377B"/></svg><span><strong>Beautiful Mermaid</strong> by Craft</span></button>
       <div class="brand-dropdown shadow-modal-small" id="brand-dropdown">
-        <a href="https://github.com/lukilabs/beautiful-mermaid" class="brand-dropdown-item" target="_blank" rel="noopener">
-          <svg width="14" height="14" class="brand-dropdown-logo" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-          <span>GitHub Repository</span>
+        <a href="https://agents.craft.do" class="brand-dropdown-item" target="_blank" rel="noopener">
+          <svg width="18" height="18" class="brand-dropdown-logo" style="margin-left: -4px;" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="translate(3.4502, 3)" fill="#9570BE"><path d="M3.17890888,3.6 L3.17890888,0 L16,0 L16,3.6 L3.17890888,3.6 Z M9.642,7.2 L9.64218223,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.642,7.2 Z M3.17890888,18 L3.178,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.17890888,18 Z" fill-rule="nonzero"></path></g></svg>
+          <span style="margin-left: -2px;">Craft Agents<span class="tagline">Simply mind-blowing</span></span>
         </a>
         <a href="https://craft.do" class="brand-dropdown-item" target="_blank" rel="noopener">
           <svg width="12" height="12" class="brand-dropdown-logo" viewBox="0 0 299 300" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M137.879 300L137.875 300.001C62.3239 300.001 0.966154 239.232 0.0117188 163.908L2.56478e-10 162.126H137.879V300Z" fill="currentColor"/><path d="M137.879 0.000976562L137.875 0C61.729 6.6569e-06 0.000194275 61.729 0 137.875L2.56478e-10 137.878L137.879 137.878L137.879 0.000976562Z" fill="currentColor"/><path d="M160.558 137.882L160.561 137.883C236.707 137.882 298.436 76.1537 298.436 0.00758561V0.00563248L160.558 0.00562043L160.558 137.882Z" fill="currentColor"/><path d="M160.558 162.124L160.561 162.123C236.112 162.123 297.471 222.891 298.426 298.216L298.436 299.998H160.558V162.124Z" fill="currentColor"/></svg>
@@ -1099,14 +1252,14 @@ async function generateHtml(): Promise<string> {
     <h1 class="hero-title">Beautiful Mermaid</h1>
     <p class="hero-tagline">Mermaid Rendering, made beautiful.</p>
     <p class="hero-description">
-      An open source library for rendering diagrams, designed for the age of AI: <code>beautiful-mermaid</code>.
+      An open source library for rendering diagrams, designed for the age of AI: <a href="https://www.npmjs.com/package/beautiful-mermaid" target="_blank" rel="noopener"><code>beautiful-mermaid</code></a>.
       Ultra-fast, fully themeable, and outputs to both SVG and ASCII.<br>
       Built by the team at <a href="https://craft.do" target="_blank" rel="noopener">Craft</a> — because diagrams deserve great design too.
     </p>
     <div class="hero-buttons">
-      <a href="https://www.npmjs.com/package/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-primary">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.332h-2.669v-.001zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z"/></svg>
-        npm install
+      <a href="https://agents.craft.do" target="_blank" rel="noopener" class="hero-btn hero-btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g transform="translate(3.4502, 3)" fill="currentColor"><path d="M3.17890888,3.6 L3.17890888,0 L16,0 L16,3.6 L3.17890888,3.6 Z M9.642,7.2 L9.64218223,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.642,7.2 Z M3.17890888,18 L3.178,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.17890888,18 Z" fill-rule="nonzero"></path></g></svg>
+        Use in Craft Agents
       </a>
       <a href="https://github.com/lukilabs/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-secondary">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
@@ -1119,7 +1272,7 @@ async function generateHtml(): Promise<string> {
     </div>
     <div class="hero-meta">
       <p class="meta" id="total-timing">Rendering ${samples.length * 2} samples\u2026</p>
-      <div class="meta">Samples rendered client-side in real time</div>
+      <div class="meta">ASCII rendering based on <a href="https://github.com/AlexanderGrooff/mermaid-ascii" target="_blank" rel="noopener">Mermaid-ASCII</a></div>
       <div class="meta">Early preview — actively evolving</div>
     </div>
   </header>
@@ -1142,8 +1295,9 @@ ${bundleJs}
 
   var samples = ${samplesJson};
   var THEMES = window.__mermaid.THEMES;
-  var renderMermaid = window.__mermaid.renderMermaid;
-  var renderMermaidAscii = window.__mermaid.renderMermaidAscii;
+  var renderMermaid = window.__mermaid.renderMermaidSVGAsync;
+  var renderMermaidAscii = window.__mermaid.renderMermaidASCII;
+  var diagramColorsToAsciiTheme = window.__mermaid.diagramColorsToAsciiTheme;
 
   var totalTimingEl = document.getElementById('total-timing');
 
@@ -1272,7 +1426,20 @@ ${bundleJs}
       }
     }
 
-    // 4. Update active pill
+    // 4. Re-render ASCII panels with new theme colors
+    var asciiTheme = theme ? diagramColorsToAsciiTheme(theme) : null;
+    for (var j = 0; j < samples.length; j++) {
+      var asciiEl = document.getElementById('ascii-' + (j + 1));
+      if (!asciiEl) continue;
+      try {
+        asciiEl.innerHTML = renderMermaidAscii(
+          samples[j].source,
+          asciiTheme ? { theme: asciiTheme } : {}
+        );
+      } catch (e) { /* keep existing content */ }
+    }
+
+    // 5. Update active pill
     var pills = document.querySelectorAll('.theme-pill');
     for (var j = 0; j < pills.length; j++) {
       var isActive = pills[j].getAttribute('data-theme') === themeKey;
@@ -1280,7 +1447,7 @@ ${bundleJs}
       pills[j].classList.toggle('shadow-tinted', isActive);
     }
 
-    // 5. Persist selection
+    // 6. Persist selection
     if (themeKey) {
       localStorage.setItem('mermaid-theme', themeKey);
     } else {
@@ -1493,7 +1660,10 @@ ${bundleJs}
     // Hero samples don't have ASCII panels
     if (asciiContainer) {
       try {
-        asciiContainer.textContent = renderMermaidAscii(sample.source);
+        var asciiOpts = savedTheme && THEMES[savedTheme]
+          ? { theme: diagramColorsToAsciiTheme(THEMES[savedTheme]) }
+          : {};
+        asciiContainer.innerHTML = renderMermaidAscii(sample.source, asciiOpts);
       } catch (e) {
         asciiContainer.textContent = '(ASCII not supported for this diagram type)';
       }
@@ -1508,15 +1678,136 @@ ${bundleJs}
   function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+
+  // ============================================================================
+  // Edit dialog — open, close, save & re-render
+  // ============================================================================
+
+  var editOverlay = document.getElementById('edit-overlay');
+  var editTextarea = document.getElementById('edit-dialog-textarea');
+  var editSaveBtn = document.getElementById('edit-dialog-save');
+  var editCancelBtn = document.getElementById('edit-dialog-cancel');
+  var editCloseBtn = document.getElementById('edit-dialog-close');
+  var editingSampleIndex = -1;
+
+  function openEditDialog(index) {
+    editingSampleIndex = index;
+    editTextarea.value = samples[index].source;
+    editOverlay.classList.add('open');
+    editTextarea.focus();
+  }
+
+  function closeEditDialog() {
+    editOverlay.classList.remove('open');
+    editingSampleIndex = -1;
+  }
+
+  async function saveAndRender() {
+    var index = editingSampleIndex;
+    if (index < 0) return;
+    var source = editTextarea.value;
+    samples[index].source = source;
+
+    // Close dialog immediately so user sees results rendering
+    closeEditDialog();
+
+    // Update source panel with plain text (Shiki not available at runtime)
+    var sourcePanel = document.getElementById('source-panel-' + index);
+    if (sourcePanel) {
+      var shikiEl = sourcePanel.querySelector('.shiki');
+      if (shikiEl) {
+        shikiEl.innerHTML = '<code>' + escapeHtml(source) + '</code>';
+      }
+    }
+
+    // Re-render SVG (async — renderMermaid returns a Promise)
+    var svgContainer = document.getElementById('svg-' + index);
+    try {
+      var svg = await renderMermaid(source, samples[index].options);
+      svgContainer.innerHTML = svg;
+      var svgEl = svgContainer.querySelector('svg');
+      if (svgEl) {
+        originalSvgStyles[index] = svgEl.getAttribute('style') || '';
+        var activeTheme = localStorage.getItem('mermaid-theme');
+        if (activeTheme && THEMES[activeTheme]) {
+          var th = THEMES[activeTheme];
+          svgEl.style.setProperty('--bg', th.bg);
+          svgEl.style.setProperty('--fg', th.fg);
+          var enrichment = ['line', 'accent', 'muted', 'surface', 'border'];
+          for (var k = 0; k < enrichment.length; k++) {
+            if (th[enrichment[k]]) svgEl.style.setProperty('--' + enrichment[k], th[enrichment[k]]);
+            else svgEl.style.removeProperty('--' + enrichment[k]);
+          }
+        }
+      }
+    } catch (err) {
+      svgContainer.innerHTML = '<div class="render-error">' + escapeHtml(String(err)) + '</div>';
+    }
+
+    // Re-render ASCII
+    var asciiContainer = document.getElementById('ascii-' + index);
+    if (asciiContainer) {
+      try {
+        var activeThemeKey = localStorage.getItem('mermaid-theme');
+        var editAsciiOpts = activeThemeKey && THEMES[activeThemeKey]
+          ? { theme: diagramColorsToAsciiTheme(THEMES[activeThemeKey]) }
+          : {};
+        asciiContainer.innerHTML = renderMermaidAscii(source, editAsciiOpts);
+      } catch (e) {
+        asciiContainer.textContent = '(ASCII error: ' + e.message + ')';
+      }
+    }
+  }
+
+  // Event listeners
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.edit-btn');
+    if (btn) openEditDialog(parseInt(btn.dataset.sample, 10));
+  });
+  editSaveBtn.addEventListener('click', saveAndRender);
+  editCancelBtn.addEventListener('click', closeEditDialog);
+  editCloseBtn.addEventListener('click', closeEditDialog);
+  editOverlay.addEventListener('click', function(e) {
+    if (e.target === editOverlay) closeEditDialog();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (!editOverlay.classList.contains('open')) return;
+    if (e.key === 'Escape') closeEditDialog();
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveAndRender();
+  });
+
   </script>
+
+  <!-- Edit dialog (shared single instance) -->
+  <div class="edit-overlay" id="edit-overlay">
+    <div class="edit-dialog shadow-modal-small">
+      <div class="edit-dialog-header">
+        <span class="edit-dialog-title">Edit Diagram</span>
+        <button class="edit-dialog-close" id="edit-dialog-close">&times;</button>
+      </div>
+      <textarea class="edit-dialog-textarea" id="edit-dialog-textarea"
+        spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
+      <div class="edit-dialog-footer">
+        <button class="edit-dialog-btn edit-dialog-cancel" id="edit-dialog-cancel">Cancel</button>
+        <button class="edit-dialog-btn edit-dialog-save" id="edit-dialog-save">Save &amp; Render</button>
+      </div>
+    </div>
+  </div>
+
   </div><!-- .content-wrapper -->
 
   <footer class="site-footer">
-    <span>&copy; 2026 Luki Labs. MIT License.</span>
+    <span>&copy; 2026 Craft Docs Limited, Inc. All rights reserved.</span>
     <div class="footer-links">
+      <a href="mailto:agents@craft.do">Contact</a>
       <a href="https://github.com/lukilabs/beautiful-mermaid" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+        </svg>
+      </a>
+      <a href="https://x.com/craftdocs" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
         </svg>
       </a>
     </div>

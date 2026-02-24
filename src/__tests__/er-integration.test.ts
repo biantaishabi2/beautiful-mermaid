@@ -2,11 +2,11 @@
  * Integration tests for ER diagrams — end-to-end parse → layout → render.
  */
 import { describe, it, expect } from 'bun:test'
-import { renderMermaid } from '../index.ts'
+import { renderMermaidSVG } from '../index.ts'
 
-describe('renderMermaid – ER diagrams', () => {
-  it('renders a basic ER diagram to valid SVG', async () => {
-    const svg = await renderMermaid(`erDiagram
+describe('renderMermaidSVG – ER diagrams', () => {
+  it('renders a basic ER diagram to valid SVG', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER ||--o{ ORDER : places`)
     expect(svg).toContain('<svg')
     expect(svg).toContain('</svg>')
@@ -15,8 +15,8 @@ describe('renderMermaid – ER diagrams', () => {
     expect(svg).toContain('places')
   })
 
-  it('renders entity with attributes', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders entity with attributes', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER {
         int id PK
         string name
@@ -31,45 +31,44 @@ describe('renderMermaid – ER diagrams', () => {
     expect(svg).toContain('UK')
   })
 
-  it('renders relationship lines between entities', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders relationship lines between entities', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : has`)
     // Should have polyline for the relationship
     expect(svg).toContain('<polyline')
   })
 
-  it('renders crow\'s foot cardinality markers', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders crow\'s foot cardinality markers', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER ||--o{ ORDER : places`)
     // Crow's foot markers are rendered as lines
-    // The "one" side has perpendicular lines, the "many" side has fan lines
     const lineCount = (svg.match(/<line /g) ?? []).length
     // Entity divider lines + cardinality markers
     expect(lineCount).toBeGreaterThan(2)
   })
 
-  it('renders non-identifying (dashed) relationships', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders non-identifying (dashed) relationships', () => {
+    const svg = renderMermaidSVG(`erDiagram
       USER ||..o{ LOG : generates`)
     expect(svg).toContain('stroke-dasharray')
   })
 
-  it('renders relationship labels with background pills', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders relationship labels with background pills', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : places`)
     expect(svg).toContain('places')
     // Background pill behind label
     expect(svg).toContain('rx="2"')
   })
 
-  it('renders with dark colors', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders with dark colors', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--|| B : links`, { bg: '#18181B', fg: '#FAFAFA' })
     expect(svg).toContain('--bg:#18181B')
   })
 
-  it('renders entity boxes with header and attribute rows', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders entity boxes with header and attribute rows', () => {
+    const svg = renderMermaidSVG(`erDiagram
       USER {
         int id PK
         string name
@@ -80,8 +79,8 @@ describe('renderMermaid – ER diagrams', () => {
     expect(rectCount).toBeGreaterThanOrEqual(2) // outer box + header
   })
 
-  it('renders a complete e-commerce schema', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('renders a complete e-commerce schema', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER {
         int id PK
         string name
@@ -150,8 +149,9 @@ function extractEntityBoxes(svg: string): Map<string, { x: number; y: number; wi
 /** Extract relationship label positions from SVG: returns Map<label, {x, y}> */
 function extractLabelPositions(svg: string): Map<string, { x: number; y: number }> {
   const labels = new Map<string, { x: number; y: number }>()
-  // Relationship labels use font-size="11" font-weight="400" with dy baseline shift
-  const labelPattern = /<text x="([\d.]+)" y="([\d.]+)"[^>]*text-anchor="middle"[^>]*dy="[^"]*"[^>]*font-size="11"[^>]*font-weight="400"[^>]*>([^<]+)<\/text>/g
+  // Relationship labels use font-size="11" font-weight="400" — match flexibly
+  // regardless of attribute order
+  const labelPattern = /<text x="([\d.]+)" y="([\d.]+)"[^>]*font-size="11"[^>]*font-weight="400"[^>]*>([^<]+)<\/text>/g
   let match
   while ((match = labelPattern.exec(svg)) !== null) {
     labels.set(match[3]!, { x: parseFloat(match[1]!), y: parseFloat(match[2]!) })
@@ -162,7 +162,8 @@ function extractLabelPositions(svg: string): Map<string, { x: number; y: number 
 /** Extract polyline paths from SVG: returns array of point arrays */
 function extractPolylines(svg: string): Array<Array<{ x: number; y: number }>> {
   const polylines: Array<Array<{ x: number; y: number }>> = []
-  const pattern = /<polyline points="([^"]+)"/g
+  // Match polylines with points attribute anywhere in the tag
+  const pattern = /<polyline[^>]*points="([^"]+)"[^>]*>/g
   let match
   while ((match = pattern.exec(svg)) !== null) {
     const points = match[1]!.split(' ').map(p => {
@@ -218,9 +219,9 @@ function closestPolylineDistance(label: { x: number; y: number }, polylines: Arr
 
 // ─── Straight-line label positioning ────────────────────────────────────────
 
-describe('renderMermaid – ER label positioning (straight lines)', () => {
-  it('label is between the two entity boxes horizontally', async () => {
-    const svg = await renderMermaid(`erDiagram
+describe('renderMermaidSVG – ER label positioning (straight lines)', () => {
+  it('label is between the two entity boxes horizontally', () => {
+    const svg = renderMermaidSVG(`erDiagram
       TEACHER }|--o{ COURSE : teaches`)
 
     const boxes = extractEntityBoxes(svg)
@@ -237,8 +238,8 @@ describe('renderMermaid – ER label positioning (straight lines)', () => {
     expect(label.x).toBeLessThan(rightEdge)
   })
 
-  it('label has minimum clearance from entity box edges', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('label has minimum clearance from entity box edges', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : links`)
 
     const boxes = extractEntityBoxes(svg)
@@ -256,8 +257,8 @@ describe('renderMermaid – ER label positioning (straight lines)', () => {
     expect(rightBox.x - label.x).toBeGreaterThanOrEqual(minClearance)
   })
 
-  it('label is approximately at the horizontal midpoint of the gap', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('label is approximately at the horizontal midpoint of the gap', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER ||--o{ ORDER : places`)
 
     const boxes = extractEntityBoxes(svg)
@@ -274,8 +275,8 @@ describe('renderMermaid – ER label positioning (straight lines)', () => {
     expect(Math.abs(label.x - gapMidpoint)).toBeLessThan(15)
   })
 
-  it('label sits on (or very near) its relationship polyline', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('label sits on (or very near) its relationship polyline', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : connects`)
 
     const labels = extractLabelPositions(svg)
@@ -289,15 +290,10 @@ describe('renderMermaid – ER label positioning (straight lines)', () => {
 })
 
 // ─── Multi-entity diagrams with orthogonal routing ──────────────────────────
-// Dagre produces multi-segment paths when entities are on different layers.
-// Labels must sit ON the bent path, not float at the geometric center of
-// start/end (which would be off-path for L-shaped or Z-shaped routes).
 
-describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
-  it('all labels in a multi-relationship diagram sit near a polyline', async () => {
-    // This is sample 73: ORDER and PRODUCT have relationships that dagre routes
-    // with bends. "contains" and "receives" had labels floating off-path before fix.
-    const svg = await renderMermaid(`erDiagram
+describe('renderMermaidSVG – ER label positioning (multi-segment paths)', () => {
+  it('all labels in a multi-relationship diagram sit near a polyline', () => {
+    const svg = renderMermaidSVG(`erDiagram
       ORDER ||--|{ LINE_ITEM : contains
       ORDER ||..o{ SHIPMENT : ships-via
       PRODUCT ||--o{ LINE_ITEM : includes
@@ -312,16 +308,14 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     }
 
     // Every label should be within 2px of a polyline segment
-    // (arc-length midpoint guarantees the point is ON the path)
-    for (const [name, pos] of labels) {
+    for (const [, pos] of labels) {
       const dist = closestPolylineDistance(pos, polylines)
       expect(dist).toBeLessThan(2)
     }
   })
 
-  it('non-identifying relationship labels also sit on their dashed polylines', async () => {
-    // Sample 72: USER has two non-identifying (dashed) relationships
-    const svg = await renderMermaid(`erDiagram
+  it('non-identifying relationship labels also sit on their dashed polylines', () => {
+    const svg = renderMermaidSVG(`erDiagram
       USER ||..o{ LOG_ENTRY : generates
       USER ||..o{ SESSION : opens`)
 
@@ -337,10 +331,8 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     }
   })
 
-  it('label on vertical segment has x matching the segment x', async () => {
-    // When a relationship goes purely vertical, the label should have x
-    // matching the vertical segment's x (not the average of start.x and end.x)
-    const svg = await renderMermaid(`erDiagram
+  it('label on vertical segment has x matching the segment x', () => {
+    const svg = renderMermaidSVG(`erDiagram
       ORDER ||--|{ LINE_ITEM : contains
       ORDER ||..o{ SHIPMENT : ships-via
       PRODUCT ||--o{ LINE_ITEM : includes
@@ -356,8 +348,8 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     }
   })
 
-  it('labels in e-commerce schema all sit on their polylines', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('labels in e-commerce schema all sit on their polylines', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER ||--o{ ORDER : places
       ORDER ||--|{ LINE_ITEM : contains
       PRODUCT ||--o{ LINE_ITEM : includes`)
@@ -372,11 +364,8 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     }
   })
 
-  it('label is not at the endpoint of any polyline', async () => {
-    // Regression guard: the old midpoint() picked points[floor(n/2)], which
-    // for 2-point lines was the target endpoint. Arc-length midpoint should
-    // never be at an endpoint for lines with non-zero length.
-    const svg = await renderMermaid(`erDiagram
+  it('label is not at the endpoint of any polyline', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : links`)
 
     const labels = extractLabelPositions(svg)
@@ -386,17 +375,15 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     for (const pl of polylines) {
       const start = pl[0]!
       const end = pl[pl.length - 1]!
-      // Label should not be at either endpoint (allow 1px tolerance)
       const distToStart = Math.sqrt((label.x - start.x) ** 2 + (label.y - start.y) ** 2)
       const distToEnd = Math.sqrt((label.x - end.x) ** 2 + (label.y - end.y) ** 2)
       // At least one endpoint should be far from the label (>5px)
-      // since the label should be at the midpoint, not an endpoint
       expect(Math.min(distToStart, distToEnd)).toBeGreaterThan(5)
     }
   })
 
-  it('multiple labels in same diagram have distinct positions', async () => {
-    const svg = await renderMermaid(`erDiagram
+  it('multiple labels in same diagram have distinct positions', () => {
+    const svg = renderMermaidSVG(`erDiagram
       CUSTOMER ||--o{ ORDER : places
       ORDER ||--|{ LINE_ITEM : contains
       PRODUCT ||--o{ LINE_ITEM : includes`)
@@ -415,9 +402,8 @@ describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
     }
   })
 
-  it('label background pill also sits on the polyline', async () => {
-    // The background rect behind the label should also be centered on the path
-    const svg = await renderMermaid(`erDiagram
+  it('label background pill also sits on the polyline', () => {
+    const svg = renderMermaidSVG(`erDiagram
       A ||--o{ B : test`)
 
     const labels = extractLabelPositions(svg)

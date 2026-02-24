@@ -15,34 +15,33 @@
 // See src/theme.ts for the full variable system.
 //
 // Usage:
-//   import { renderMermaid } from 'beautiful-mermaid'
-//   const svg = await renderMermaid('graph TD\n  A --> B')
-//   const svg = await renderMermaid('graph TD\n  A --> B', { bg: '#1a1b26', fg: '#a9b1d6' })
+//   import { renderMermaidSVG } from 'beautiful-mermaid'
+//   const svg = renderMermaidSVG('graph TD\n  A --> B')
 // ============================================================================
 
 export type { RenderOptions, MermaidGraph, PositionedGraph } from './types.ts'
 export type { DiagramColors, ThemeName } from './theme.ts'
 export { fromShikiTheme, THEMES, DEFAULTS } from './theme.ts'
 export { parseMermaid } from './parser.ts'
-export { renderMermaidAscii } from './ascii/index.ts'
+export { renderMermaidASCII, renderMermaidAscii } from './ascii/index.ts'
 export type { AsciiRenderOptions } from './ascii/index.ts'
 
+import { decodeXML } from 'entities'
 import { parseMermaid } from './parser.ts'
-import { layoutGraph } from './layout.ts'
+import { layoutGraphSync } from './layout.ts'
 import { renderSvg } from './renderer.ts'
 import type { RenderOptions } from './types.ts'
 import type { DiagramColors } from './theme.ts'
 import { DEFAULTS } from './theme.ts'
 
-// New diagram type imports
 import { parseSequenceDiagram } from './sequence/parser.ts'
 import { layoutSequenceDiagram } from './sequence/layout.ts'
 import { renderSequenceSvg } from './sequence/renderer.ts'
 import { parseClassDiagram } from './class/parser.ts'
-import { layoutClassDiagram } from './class/layout.ts'
+import { layoutClassDiagramSync } from './class/layout.ts'
 import { renderClassSvg } from './class/renderer.ts'
 import { parseErDiagram } from './er/parser.ts'
-import { layoutErDiagram } from './er/layout.ts'
+import { layoutErDiagramSync } from './er/layout.ts'
 import { renderErSvg } from './er/renderer.ts'
 import { parseXYChart } from './xychart/parser.ts'
 import { layoutXYChart } from './xychart/layout.ts'
@@ -82,15 +81,13 @@ function buildColors(options: RenderOptions): DiagramColors {
 }
 
 /**
- * Render Mermaid diagram text to an SVG string.
+ * Render Mermaid diagram text to an SVG string — synchronously.
  *
- * Async because layout engines run asynchronously.
- * Auto-detects diagram type from the header line.
+ * Uses elk.bundled.js with a direct FakeWorker bypass (no setTimeout(0) delay).
+ * The ELK singleton is created lazily on first use and cached forever.
  *
- * Colors are set via CSS custom properties on the <svg> tag:
- *   - bg/fg: Required base colors (default: white/#27272A)
- *   - line/accent/muted/surface/border: Optional enrichment colors
- *     (fall back to color-mix() derivations from bg+fg)
+ * Use this in React components with useMemo() to avoid flash:
+ *   const svg = useMemo(() => renderMermaidSVG(code, opts), [code])
  *
  * @param text - Mermaid source text
  * @param options - Rendering options (colors, font, spacing)
@@ -98,32 +95,33 @@ function buildColors(options: RenderOptions): DiagramColors {
  *
  * @example
  * ```ts
- * // Mono — just defaults, everything derived from bg+fg
- * const svg = await renderMermaid('graph TD\n  A --> B')
+ * const svg = renderMermaidSVG('graph TD\n  A --> B')
  *
- * // Custom colors
- * const svg = await renderMermaid('graph TD\n  A --> B', {
+ * // With theme
+ * const svg = renderMermaidSVG('graph TD\n  A --> B', {
  *   bg: '#1a1b26', fg: '#a9b1d6'
  * })
  *
- * // Enriched — Tokyo Night with accent + line colors
- * const svg = await renderMermaid('graph TD\n  A --> B', {
- *   bg: '#1a1b26', fg: '#a9b1d6',
- *   line: '#3d59a1', accent: '#7aa2f7', muted: '#565f89',
+ * // With CSS variables (for live theme switching)
+ * const svg = renderMermaidSVG('graph TD\n  A --> B', {
+ *   bg: 'var(--background)', fg: 'var(--foreground)', transparent: true
  * })
  * ```
  */
-export async function renderMermaid(
+export function renderMermaidSVG(
   text: string,
   options: RenderOptions = {}
-): Promise<string> {
+): string {
+  // Decode XML entities that may leak from markdown parsers (e.g. rehype-raw).
+  // Without this, escapeXml() double-encodes them: &lt; → &amp;lt; → literal "&lt;" in SVG.
+  text = decodeXML(text)
+
   const colors = buildColors(options)
   const font = options.font ?? 'Inter'
   const transparent = options.transparent ?? false
   const diagramType = detectDiagramType(text)
 
-  // Preprocess: strip leading/trailing whitespace, filter comments
-  const lines = text.split(/[\n;]/).map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
 
   switch (diagramType) {
     case 'sequence': {
@@ -133,12 +131,12 @@ export async function renderMermaid(
     }
     case 'class': {
       const diagram = parseClassDiagram(lines)
-      const positioned = await layoutClassDiagram(diagram, options)
+      const positioned = layoutClassDiagramSync(diagram, options)
       return renderClassSvg(positioned, colors, font, transparent)
     }
     case 'er': {
       const diagram = parseErDiagram(lines)
-      const positioned = await layoutErDiagram(diagram, options)
+      const positioned = layoutErDiagramSync(diagram, options)
       return renderErSvg(positioned, colors, font, transparent)
     }
     case 'xychart': {
@@ -148,10 +146,32 @@ export async function renderMermaid(
     }
     case 'flowchart':
     default: {
-      // Flowchart + state diagram pipeline (original)
       const graph = parseMermaid(text)
-      const positioned = await layoutGraph(graph, options)
+      const positioned = layoutGraphSync(graph, options)
       return renderSvg(positioned, colors, font, transparent)
     }
   }
 }
+
+/**
+ * Render Mermaid diagram text to an SVG string — async.
+ *
+ * Same result as renderMermaidSVG() but returns a Promise.
+ * Useful in async contexts (server handlers, data loaders, etc.)
+ */
+export async function renderMermaidSVGAsync(
+  text: string,
+  options: RenderOptions = {}
+): Promise<string> {
+  return renderMermaidSVG(text, options)
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible aliases
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use `renderMermaidSVG` */
+export const renderMermaidSync = renderMermaidSVG
+
+/** @deprecated Use `renderMermaidSVGAsync` */
+export const renderMermaid = renderMermaidSVGAsync

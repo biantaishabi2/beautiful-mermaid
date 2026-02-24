@@ -290,7 +290,8 @@ describe('renderSvg – edges', () => {
     const edge = makeEdge({ style: 'thick' })
     const graph = makeGraph({ edges: [edge] })
     const svg = renderSvg(graph, lightColors)
-    expect(svg).toContain('stroke-width="1.5"')
+    // Base connector stroke is 1px, thick is doubled to 2px
+    expect(svg).toContain('stroke-width="2"')
   })
 
   it('does not add dasharray to solid edges', () => {
@@ -462,7 +463,13 @@ describe('renderSvg – XML escaping', () => {
     const svg = renderSvg(graph, lightColors)
     expect(svg).toContain('A &lt; B')
   })
+})
 
+// ============================================================================
+// Security: inline style injection prevention
+// ============================================================================
+
+describe('renderSvg – inline style XSS prevention', () => {
   it('escapes attribute injection in inline style fill', () => {
     const node = makeNode({ inlineStyle: { fill: 'red" onmouseover="alert(1)' } })
     const graph = makeGraph({ nodes: [node] })

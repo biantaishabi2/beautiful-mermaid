@@ -2,11 +2,11 @@
  * Integration tests for class diagrams — end-to-end parse → layout → render.
  */
 import { describe, it, expect } from 'bun:test'
-import { renderMermaid } from '../index.ts'
+import { renderMermaidSVG } from '../index.ts'
 
-describe('renderMermaid – class diagrams', () => {
-  it('renders a basic class diagram to valid SVG', async () => {
-    const svg = await renderMermaid(`classDiagram
+describe('renderMermaidSVG – class diagrams', () => {
+  it('renders a basic class diagram to valid SVG', () => {
+    const svg = renderMermaidSVG(`classDiagram
       class Animal {
         +String name
         +eat() void
@@ -18,8 +18,8 @@ describe('renderMermaid – class diagrams', () => {
     expect(svg).toContain('eat')
   })
 
-  it('renders class with annotation', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders class with annotation', () => {
+    const svg = renderMermaidSVG(`classDiagram
       class Flyable {
         <<interface>>
         +fly() void
@@ -29,8 +29,8 @@ describe('renderMermaid – class diagrams', () => {
     expect(svg).toContain('fly')
   })
 
-  it('renders inheritance relationship with triangle marker', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders inheritance relationship with triangle marker', () => {
+    const svg = renderMermaidSVG(`classDiagram
       Animal <|-- Dog`)
     expect(svg).toContain('Animal')
     expect(svg).toContain('Dog')
@@ -38,40 +38,40 @@ describe('renderMermaid – class diagrams', () => {
     expect(svg).toContain('cls-inherit')
   })
 
-  it('renders composition with filled diamond', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders composition with filled diamond', () => {
+    const svg = renderMermaidSVG(`classDiagram
       Car *-- Engine`)
     expect(svg).toContain('cls-composition')
   })
 
-  it('renders aggregation with hollow diamond', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders aggregation with hollow diamond', () => {
+    const svg = renderMermaidSVG(`classDiagram
       University o-- Department`)
     expect(svg).toContain('cls-aggregation')
   })
 
-  it('renders dependency with dashed line', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders dependency with dashed line', () => {
+    const svg = renderMermaidSVG(`classDiagram
       Service ..> Repository`)
     expect(svg).toContain('stroke-dasharray')
     expect(svg).toContain('cls-arrow')
   })
 
-  it('renders realization with dashed line and triangle', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders realization with dashed line and triangle', () => {
+    const svg = renderMermaidSVG(`classDiagram
       Bird ..|> Flyable`)
     expect(svg).toContain('stroke-dasharray')
     expect(svg).toContain('cls-inherit')
   })
 
-  it('renders relationship labels', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders relationship labels', () => {
+    const svg = renderMermaidSVG(`classDiagram
       Customer --> Order : places`)
     expect(svg).toContain('places')
   })
 
-  it('renders class compartments with divider lines', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders class compartments with divider lines', () => {
+    const svg = renderMermaidSVG(`classDiagram
       class Animal {
         +String name
         +eat() void
@@ -82,16 +82,16 @@ describe('renderMermaid – class diagrams', () => {
     expect(lines.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('renders with dark colors', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders with dark colors', () => {
+    const svg = renderMermaidSVG(`classDiagram
       class A {
         +x int
       }`, { bg: '#18181B', fg: '#FAFAFA' })
     expect(svg).toContain('--bg:#18181B')
   })
 
-  it('renders a complete class hierarchy', async () => {
-    const svg = await renderMermaid(`classDiagram
+  it('renders a complete class hierarchy', () => {
+    const svg = renderMermaidSVG(`classDiagram
       class Animal {
         <<abstract>>
         +String name

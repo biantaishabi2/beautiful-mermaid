@@ -1,22 +1,22 @@
 /**
- * Integration tests for the full renderMermaid pipeline.
+ * Integration tests for the full renderMermaidSVG pipeline.
  *
  * These tests exercise parse → layout → render end-to-end.
- * They're async because layout functions return promises.
+ * They use the synchronous ELK.js-based rendering pipeline.
  *
  * Covers: original features, Batch 1 (new shapes), Batch 2 (edges, styles),
  * and Batch 3 (state diagrams).
  */
 import { describe, it, expect } from 'bun:test'
-import { renderMermaid } from '../index.ts'
+import { renderMermaidSVG } from '../index.ts'
 
 // ============================================================================
 // Basic rendering
 // ============================================================================
 
-describe('renderMermaid – basic', () => {
-  it('renders a simple graph to valid SVG', async () => {
-    const svg = await renderMermaid('graph TD\n  A --> B')
+describe('renderMermaidSVG – basic', () => {
+  it('renders a simple graph to valid SVG', () => {
+    const svg = renderMermaidSVG('graph TD\n  A --> B')
     expect(svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"')
     expect(svg).toContain('</svg>')
     // Should contain both nodes
@@ -24,14 +24,14 @@ describe('renderMermaid – basic', () => {
     expect(svg).toContain('>B</text>')
   })
 
-  it('renders a graph with labeled nodes', async () => {
-    const svg = await renderMermaid('graph TD\n  A[Start] --> B[End]')
+  it('renders a graph with labeled nodes', () => {
+    const svg = renderMermaidSVG('graph TD\n  A[Start] --> B[End]')
     expect(svg).toContain('>Start</text>')
     expect(svg).toContain('>End</text>')
   })
 
-  it('renders edges with labels', async () => {
-    const svg = await renderMermaid('graph TD\n  A -->|Yes| B')
+  it('renders edges with labels', () => {
+    const svg = renderMermaidSVG('graph TD\n  A -->|Yes| B')
     expect(svg).toContain('>Yes</text>')
   })
 })
@@ -40,27 +40,27 @@ describe('renderMermaid – basic', () => {
 // Options
 // ============================================================================
 
-describe('renderMermaid – options', () => {
-  it('applies dark colors', async () => {
-    const svg = await renderMermaid('graph TD\n  A --> B', { bg: '#18181B', fg: '#FAFAFA' })
+describe('renderMermaidSVG – options', () => {
+  it('applies dark colors', () => {
+    const svg = renderMermaidSVG('graph TD\n  A --> B', { bg: '#18181B', fg: '#FAFAFA' })
     expect(svg).toContain('--bg:#18181B')
   })
 
-  it('applies default light colors', async () => {
-    const svg = await renderMermaid('graph TD\n  A --> B')
+  it('applies default light colors', () => {
+    const svg = renderMermaidSVG('graph TD\n  A --> B')
     expect(svg).toContain('--bg:#FFFFFF')
   })
 
-  it('applies custom font', async () => {
-    const svg = await renderMermaid('graph TD\n  A --> B', { font: 'JetBrains Mono' })
+  it('applies custom font', () => {
+    const svg = renderMermaidSVG('graph TD\n  A --> B', { font: 'JetBrains Mono' })
     expect(svg).toContain("'JetBrains Mono'")
   })
 
-  it('respects padding option', async () => {
-    const small = await renderMermaid('graph TD\n  A --> B', { padding: 10 })
-    const large = await renderMermaid('graph TD\n  A --> B', { padding: 80 })
+  it('respects padding option', () => {
+    const small = renderMermaidSVG('graph TD\n  A --> B', { padding: 10 })
+    const large = renderMermaidSVG('graph TD\n  A --> B', { padding: 80 })
     const getWidth = (svg: string) => {
-      const match = svg.match(/width="(\d+)"/)
+      const match = svg.match(/width="([\d.]+)"/)
       return match ? Number(match[1]) : 0
     }
     expect(getWidth(large)).toBeGreaterThan(getWidth(small))
@@ -71,9 +71,9 @@ describe('renderMermaid – options', () => {
 // Complex diagrams
 // ============================================================================
 
-describe('renderMermaid – complex diagrams', () => {
-  it('renders all original node shapes', async () => {
-    const svg = await renderMermaid(`graph TD
+describe('renderMermaidSVG – complex diagrams', () => {
+  it('renders all original node shapes', () => {
+    const svg = renderMermaidSVG(`graph TD
       A[Rectangle] --> B(Rounded)
       B --> C{Diamond}
       C --> D([Stadium])
@@ -88,8 +88,8 @@ describe('renderMermaid – complex diagrams', () => {
     expect(svg).toContain('<circle')
   })
 
-  it('renders all edge styles', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders all edge styles', () => {
+    const svg = renderMermaidSVG(`graph TD
       A -->|solid| B
       B -.->|dotted| C
       C ==>|thick| D`)
@@ -100,8 +100,8 @@ describe('renderMermaid – complex diagrams', () => {
     expect(svg).toContain('stroke-dasharray="4 4"')
   })
 
-  it('renders subgraphs', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders subgraphs', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph Backend
         A[API] --> B[DB]
       end
@@ -113,8 +113,8 @@ describe('renderMermaid – complex diagrams', () => {
     expect(svg).toContain('>Client</text>')
   })
 
-  it('renders a complex real-world diagram', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders a complex real-world diagram', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph ci [CI Pipeline]
         A[Push Code] --> B{Tests Pass?}
         B -->|Yes| C[Build Docker]
@@ -136,13 +136,13 @@ describe('renderMermaid – complex diagrams', () => {
     expect(svg).toContain('>Production</text>')
   })
 
-  it('renders different directions', async () => {
-    const lr = await renderMermaid('graph LR\n  A --> B --> C')
-    const td = await renderMermaid('graph TD\n  A --> B --> C')
+  it('renders different directions', () => {
+    const lr = renderMermaidSVG('graph LR\n  A --> B --> C')
+    const td = renderMermaidSVG('graph TD\n  A --> B --> C')
 
     const getDimensions = (svg: string) => {
-      const w = svg.match(/width="(\d+)"/)
-      const h = svg.match(/height="(\d+)"/)
+      const w = svg.match(/width="([\d.]+)"/)
+      const h = svg.match(/height="([\d.]+)"/)
       return { width: Number(w?.[1] ?? 0), height: Number(h?.[1] ?? 0) }
     }
 
@@ -158,22 +158,22 @@ describe('renderMermaid – complex diagrams', () => {
 // Batch 1: New shapes (end-to-end)
 // ============================================================================
 
-describe('renderMermaid – Batch 1 shapes', () => {
-  it('renders subroutine shape with inner vertical lines', async () => {
-    const svg = await renderMermaid('graph TD\n  A[[Subroutine]] --> B')
+describe('renderMermaidSVG – Batch 1 shapes', () => {
+  it('renders subroutine shape with inner vertical lines', () => {
+    const svg = renderMermaidSVG('graph TD\n  A[[Subroutine]] --> B')
     expect(svg).toContain('>Subroutine</text>')
     expect(svg).toContain('<line') // inner vertical lines
   })
 
-  it('renders double circle with two <circle> elements', async () => {
-    const svg = await renderMermaid('graph TD\n  A(((Important))) --> B')
+  it('renders double circle with two <circle> elements', () => {
+    const svg = renderMermaidSVG('graph TD\n  A(((Important))) --> B')
     expect(svg).toContain('>Important</text>')
     const circleCount = (svg.match(/<circle/g) ?? []).length
     expect(circleCount).toBeGreaterThanOrEqual(2)
   })
 
-  it('renders hexagon as a polygon', async () => {
-    const svg = await renderMermaid('graph TD\n  A{{Decision}} --> B')
+  it('renders hexagon as a polygon', () => {
+    const svg = renderMermaidSVG('graph TD\n  A{{Decision}} --> B')
     expect(svg).toContain('>Decision</text>')
     expect(svg).toContain('<polygon')
   })
@@ -183,42 +183,42 @@ describe('renderMermaid – Batch 1 shapes', () => {
 // Batch 2: New shapes and edge features (end-to-end)
 // ============================================================================
 
-describe('renderMermaid – Batch 2 shapes', () => {
-  it('renders cylinder / database', async () => {
-    const svg = await renderMermaid('graph TD\n  A[(Database)] --> B')
+describe('renderMermaidSVG – Batch 2 shapes', () => {
+  it('renders cylinder / database', () => {
+    const svg = renderMermaidSVG('graph TD\n  A[(Database)] --> B')
     expect(svg).toContain('>Database</text>')
     expect(svg).toContain('<ellipse') // cylinder cap
   })
 
-  it('renders asymmetric / flag', async () => {
-    const svg = await renderMermaid('graph TD\n  A>Flag Shape] --> B')
+  it('renders asymmetric / flag', () => {
+    const svg = renderMermaidSVG('graph TD\n  A>Flag Shape] --> B')
     expect(svg).toContain('>Flag Shape</text>')
     expect(svg).toContain('<polygon')
   })
 
-  it('renders trapezoid shapes', async () => {
-    const svg = await renderMermaid('graph TD\n  A[/Wider Bottom\\] --> B[\\Wider Top/]')
+  it('renders trapezoid shapes', () => {
+    const svg = renderMermaidSVG('graph TD\n  A[/Wider Bottom\\] --> B[\\Wider Top/]')
     expect(svg).toContain('>Wider Bottom</text>')
     expect(svg).toContain('>Wider Top</text>')
   })
 })
 
-describe('renderMermaid – Batch 2 edge features', () => {
-  it('renders no-arrow edges', async () => {
-    const svg = await renderMermaid('graph TD\n  A --- B')
+describe('renderMermaidSVG – Batch 2 edge features', () => {
+  it('renders no-arrow edges', () => {
+    const svg = renderMermaidSVG('graph TD\n  A --- B')
     expect(svg).toContain('<polyline')
     // No marker-end for no-arrow edges
     expect(svg).not.toContain('marker-end')
   })
 
-  it('renders bidirectional arrows', async () => {
-    const svg = await renderMermaid('graph TD\n  A <--> B')
+  it('renders bidirectional arrows', () => {
+    const svg = renderMermaidSVG('graph TD\n  A <--> B')
     expect(svg).toContain('marker-end="url(#arrowhead)"')
     expect(svg).toContain('marker-start="url(#arrowhead-start)"')
   })
 
-  it('renders parallel links with &', async () => {
-    const svg = await renderMermaid('graph TD\n  A & B --> C')
+  it('renders parallel links with &', () => {
+    const svg = renderMermaidSVG('graph TD\n  A & B --> C')
     // Should have node labels for A, B, and C
     expect(svg).toContain('>A</text>')
     expect(svg).toContain('>B</text>')
@@ -228,8 +228,8 @@ describe('renderMermaid – Batch 2 edge features', () => {
     expect(polylines).toBe(2)
   })
 
-  it('applies inline style overrides', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('applies inline style overrides', () => {
+    const svg = renderMermaidSVG(`graph TD
       A[Red Node] --> B
       style A fill:#ff0000,stroke:#cc0000`)
     expect(svg).toContain('fill="#ff0000"')
@@ -241,9 +241,9 @@ describe('renderMermaid – Batch 2 edge features', () => {
 // Batch 3: State diagrams (end-to-end)
 // ============================================================================
 
-describe('renderMermaid – state diagrams', () => {
-  it('renders a basic state diagram', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+describe('renderMermaidSVG – state diagrams', () => {
+  it('renders a basic state diagram', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Idle
       Idle --> Active : start
       Active --> Done`)
@@ -256,24 +256,24 @@ describe('renderMermaid – state diagrams', () => {
     expect(svg).toContain('>start</text>')
   })
 
-  it('renders start pseudostate as filled circle', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('renders start pseudostate as filled circle', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Ready`)
     // Start pseudostate: filled circle with stroke="none"
     expect(svg).toContain('stroke="none"')
     expect(svg).toContain('<circle')
   })
 
-  it('renders end pseudostate as bullseye', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('renders end pseudostate as bullseye', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       Done --> [*]`)
     // End pseudostate: two circles (outer ring + inner filled)
     const circleCount = (svg.match(/<circle/g) ?? []).length
     expect(circleCount).toBeGreaterThanOrEqual(2)
   })
 
-  it('renders composite state with inner nodes', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('renders composite state with inner nodes', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       state Processing {
         parse --> validate
         validate --> execute
@@ -286,8 +286,8 @@ describe('renderMermaid – state diagrams', () => {
     expect(svg).toContain('>execute</text>')
   })
 
-  it('renders full state diagram lifecycle', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('renders full state diagram lifecycle', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Idle
       Idle --> Processing : submit
       state Processing {
@@ -306,11 +306,8 @@ describe('renderMermaid – state diagrams', () => {
     expect(svg).toContain('>done</text>')
   })
 
-  it('cycle edge labels do not overlap (Running ↔ Paused)', async () => {
-    // This diagram creates a cycle between Running and Paused, producing two
-    // edge labels ("pause" and "resume") in the same area. Before the fix,
-    // the renderer placed both at the edge midpoint, causing ~13px overlap.
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('cycle edge labels do not overlap (Running ↔ Paused)', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Ready
       Ready --> Running : start
       Running --> Paused : pause
@@ -320,7 +317,7 @@ describe('renderMermaid – state diagrams', () => {
 
     // Extract all label pill <rect> elements (rx="2" distinguishes them from node rects)
     const pillPattern = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" rx="2"/g
-    const pills: { x: number; y: number; w: number; h: number; label?: string }[] = []
+    const pills: { x: number; y: number; w: number; h: number }[] = []
     let match: RegExpExecArray | null
     while ((match = pillPattern.exec(svg)) !== null) {
       pills.push({
@@ -354,12 +351,9 @@ describe('renderMermaid – state diagrams', () => {
 // Source order and deduplication
 // ============================================================================
 
-describe('renderMermaid – source order', () => {
-  it('does not duplicate composite state nodes in SVG', async () => {
-    // When a state is referenced in a transition (Idle --> Processing) before
-    // being defined as a composite state, it should only appear once in the SVG
-    // as the compound subgraph — not as a separate standalone node.
-    const svg = await renderMermaid(`stateDiagram-v2
+describe('renderMermaidSVG – source order', () => {
+  it('does not duplicate composite state nodes in SVG', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Idle
       Idle --> Processing : submit
       state Processing {
@@ -370,15 +364,12 @@ describe('renderMermaid – source order', () => {
       Complete --> [*]`)
 
     // "Processing" should appear exactly once as a group label, not also as a standalone node.
-    // Count occurrences of ">Processing</text>" in the SVG.
     const processingLabels = (svg.match(/>Processing<\/text>/g) ?? []).length
     expect(processingLabels).toBe(1)
   })
 
-  it('renders subgraph-first diagrams with subgraph at top in TD layout', async () => {
-    // When a subgraph is defined first in the source, it should influence
-    // dagre's layering to place it near the top in a TD (top-down) graph.
-    const svg = await renderMermaid(`graph TD
+  it('renders subgraph-first diagrams with subgraph at top in TD layout', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph ci [CI Pipeline]
         A[Push Code] --> B{Tests Pass?}
         B -->|Yes| C[Build Image]
@@ -399,9 +390,9 @@ describe('renderMermaid – source order', () => {
 // Edge cases: self-loops, empty subgraphs, nesting depth
 // ============================================================================
 
-describe('renderMermaid – edge cases', () => {
-  it('renders a self-loop (source === target)', async () => {
-    const svg = await renderMermaid(`graph TD
+describe('renderMermaidSVG – edge cases', () => {
+  it('renders a self-loop (source === target)', () => {
+    const svg = renderMermaidSVG(`graph TD
       A[Node] --> A`)
 
     expect(svg).toContain('<svg')
@@ -410,16 +401,16 @@ describe('renderMermaid – edge cases', () => {
     expect(svg).toContain('<polyline')
   })
 
-  it('renders a self-loop with label', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders a self-loop with label', () => {
+    const svg = renderMermaidSVG(`graph TD
       A[Retry] -->|again| A`)
 
     expect(svg).toContain('>Retry</text>')
     expect(svg).toContain('>again</text>')
   })
 
-  it('renders an empty subgraph without crashing', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders an empty subgraph without crashing', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph Empty
       end
       A --> B`)
@@ -430,11 +421,8 @@ describe('renderMermaid – edge cases', () => {
     expect(svg).toContain('>B</text>')
   })
 
-  it('renders edges targeting an empty subgraph', async () => {
-    // Empty subgraph with edges pointing to it.
-    // Since the subgraph has no children, dagre treats it as a regular node
-    // and the edge redirects map it to itself.
-    const svg = await renderMermaid(`graph TD
+  it('renders edges targeting an empty subgraph', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph S [Empty Group]
       end
       A --> S
@@ -446,8 +434,8 @@ describe('renderMermaid – edge cases', () => {
     expect(svg).toContain('>B</text>')
   })
 
-  it('renders a single-node subgraph', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders a single-node subgraph', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph Single
         A[Only Node]
       end
@@ -458,8 +446,8 @@ describe('renderMermaid – edge cases', () => {
     expect(svg).toContain('>B</text>')
   })
 
-  it('renders 3-level nested subgraphs', async () => {
-    const svg = await renderMermaid(`graph TD
+  it('renders 3-level nested subgraphs', () => {
+    const svg = renderMermaidSVG(`graph TD
       subgraph Level1 [Outer]
         subgraph Level2 [Middle]
           subgraph Level3 [Inner]
@@ -477,8 +465,8 @@ describe('renderMermaid – edge cases', () => {
     expect(svg).toContain('>Outside</text>')
   })
 
-  it('renders 3-level nested composite states', async () => {
-    const svg = await renderMermaid(`stateDiagram-v2
+  it('renders 3-level nested composite states', () => {
+    const svg = renderMermaidSVG(`stateDiagram-v2
       [*] --> Active
       state Active {
         state Processing {
@@ -502,9 +490,9 @@ describe('renderMermaid – edge cases', () => {
 // All new shapes in one diagram (end-to-end stress test)
 // ============================================================================
 
-describe('renderMermaid – all shapes combined', () => {
-  it('renders a diagram with all 12 flowchart shapes', async () => {
-    const svg = await renderMermaid(`graph LR
+describe('renderMermaidSVG – all shapes combined', () => {
+  it('renders a diagram with all 12 flowchart shapes', () => {
+    const svg = renderMermaidSVG(`graph LR
       A[Rectangle] --> B(Rounded)
       B --> C{Diamond}
       C --> D([Stadium])

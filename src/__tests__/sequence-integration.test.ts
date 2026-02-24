@@ -2,11 +2,11 @@
  * Integration tests for sequence diagrams — end-to-end parse → layout → render.
  */
 import { describe, it, expect } from 'bun:test'
-import { renderMermaid } from '../index.ts'
+import { renderMermaidSVG } from '../index.ts'
 
-describe('renderMermaid – sequence diagrams', () => {
-  it('renders a basic sequence diagram to valid SVG', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+describe('renderMermaidSVG – sequence diagrams', () => {
+  it('renders a basic sequence diagram to valid SVG', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       Alice->>Bob: Hello
       Bob-->>Alice: Hi there`)
     expect(svg).toContain('<svg')
@@ -16,8 +16,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('Hello')
   })
 
-  it('renders participant declarations', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders participant declarations', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       participant A as Alice
       participant B as Bob
       A->>B: Message`)
@@ -26,8 +26,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('Message')
   })
 
-  it('renders actor circle-person icons', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders actor circle-person icons', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       actor U as User
       participant S as System
       U->>S: Click`)
@@ -38,8 +38,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('System')
   })
 
-  it('renders dashed return arrows', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders dashed return arrows', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Request
       B-->>A: Response`)
     // Dashed lines have stroke-dasharray
@@ -48,8 +48,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('Response')
   })
 
-  it('renders loop blocks', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders loop blocks', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Start
       loop Every 5s
         A->>B: Ping
@@ -58,8 +58,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('Every 5s')
   })
 
-  it('renders alt/else blocks', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders alt/else blocks', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Request
       alt Success
         B->>A: 200
@@ -72,22 +72,22 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(svg).toContain('Error')
   })
 
-  it('renders notes', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders notes', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Hello
       Note right of B: Think about response
       B-->>A: Hi`)
     expect(svg).toContain('Think about response')
   })
 
-  it('renders with dark colors', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders with dark colors', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Hello`, { bg: '#18181B', fg: '#FAFAFA' })
     expect(svg).toContain('--bg:#18181B')
   })
 
-  it('renders lifeline dashed lines', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders lifeline dashed lines', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       A->>B: Hello`)
     // Lifelines are dashed vertical lines
     const dashedLines = svg.match(/stroke-dasharray="6 4"/g)
@@ -95,8 +95,8 @@ describe('renderMermaid – sequence diagrams', () => {
     expect(dashedLines!.length).toBeGreaterThanOrEqual(2) // at least 2 lifelines
   })
 
-  it('renders a complex authentication flow', async () => {
-    const svg = await renderMermaid(`sequenceDiagram
+  it('renders a complex authentication flow', () => {
+    const svg = renderMermaidSVG(`sequenceDiagram
       participant C as Client
       participant S as Server
       participant DB as Database

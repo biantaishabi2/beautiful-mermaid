@@ -64,7 +64,7 @@ export interface MermaidSubgraph {
 }
 
 // ============================================================================
-// Positioned graph — after dagre layout, ready for SVG rendering
+// Positioned graph — after ELK layout, ready for SVG rendering
 // ============================================================================
 
 export interface PositionedGraph {
@@ -151,6 +151,8 @@ export interface RenderOptions {
   nodeSpacing?: number
   /** Vertical spacing between layers. Default: 40 */
   layerSpacing?: number
+  /** Spacing between disconnected components. Default: nodeSpacing (24) */
+  componentSpacing?: number
   /** Render with transparent background (no background style on SVG). Default: false */
   transparent?: boolean
   /** Enable hover tooltips on chart data points (xychart only). Default: false */

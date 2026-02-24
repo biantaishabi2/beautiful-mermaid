@@ -11,15 +11,22 @@
 
 import { parseSequenceDiagram } from '../sequence/parser.ts'
 import type { SequenceDiagram, Block } from '../sequence/types.ts'
-import type { Canvas, AsciiConfig } from './types.ts'
-import { mkCanvas, canvasToString, increaseSize } from './canvas.ts'
+import type { Canvas, AsciiConfig, RoleCanvas, CharRole, AsciiTheme, ColorMode } from './types.ts'
+import { mkCanvas, mkRoleCanvas, canvasToString, increaseSize, increaseRoleCanvasSize, setRole } from './canvas.ts'
+import { splitLines, maxLineWidth, lineCount } from './multiline-utils.ts'
+
+/** Classify a box-drawing character as 'border' or 'text'. */
+function classifyBoxChar(ch: string): CharRole {
+  if (/^[┌┐└┘├┤┬┴┼│─╭╮╰╯+\-|]$/.test(ch)) return 'border'
+  return 'text'
+}
 
 /**
  * Render a Mermaid sequence diagram to ASCII/Unicode text.
  *
  * Pipeline: parse → layout (columns + rows) → draw onto canvas → string.
  */
-export function renderSequenceAscii(text: string, config: AsciiConfig): string {
+export function renderSequenceAscii(text: string, config: AsciiConfig, colorMode?: ColorMode, theme?: AsciiTheme): string {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
   const diagram = parseSequenceDiagram(lines)
 
@@ -45,9 +52,12 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
   diagram.actors.forEach((a, i) => actorIdx.set(a.id, i))
 
   const boxPad = 1
-  const actorBoxWidths = diagram.actors.map(a => a.label.length + 2 * boxPad + 2)
+  // Use max line width for multi-line actor labels
+  const actorBoxWidths = diagram.actors.map(a => maxLineWidth(a.label) + 2 * boxPad + 2)
   const halfBox = actorBoxWidths.map(w => Math.ceil(w / 2))
-  const actorBoxH = 3 // top border + label row + bottom border
+  // Calculate actor box heights based on number of lines in label
+  const actorBoxHeights = diagram.actors.map(a => lineCount(a.label) + 2) // lines + top/bottom border
+  const actorBoxH = Math.max(...actorBoxHeights, 3) // Use max height for consistent lifeline positioning
 
   // Compute minimum gap between adjacent lifelines based on message labels.
   // For messages spanning multiple actors, distribute the required width across gaps.
@@ -59,8 +69,8 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
     if (fi === ti) continue // self-messages don't affect spacing
     const lo = Math.min(fi, ti)
     const hi = Math.max(fi, ti)
-    // Required gap per span = (label + arrow decorations) / number of gaps
-    const needed = msg.label.length + 4
+    // Required gap per span = (max line width + arrow decorations) / number of gaps
+    const needed = maxLineWidth(msg.label) + 4
     const numGaps = hi - lo
     const perGap = Math.ceil(needed / numGaps)
     for (let g = lo; g < hi; g++) {
@@ -117,16 +127,19 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
     const msg = diagram.messages[m]!
     const isSelf = msg.from === msg.to
 
+    // Calculate height needed for multi-line message labels
+    const msgLineCount = lineCount(msg.label)
+
     if (isSelf) {
-      // Self-message occupies 3 rows: top-arm, label-col, bottom-arm
+      // Self-message occupies 3+ rows: top-arm, label-col(s), bottom-arm
       msgLabelY[m] = curY + 1
       msgArrowY[m] = curY
-      curY += 3
+      curY += 2 + msgLineCount // top-arm + label lines + bottom-arm
     } else {
-      // Normal message: label row then arrow row
+      // Normal message: label row(s) then arrow row
       msgLabelY[m] = curY
-      msgArrowY[m] = curY + 1
-      curY += 2
+      msgArrowY[m] = curY + msgLineCount  // arrow goes after all label lines
+      curY += msgLineCount + 1  // label lines + arrow row
     }
 
     // Notes after this message
@@ -134,7 +147,7 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
       if (diagram.notes[n]!.afterIndex === m) {
         curY += 1
         const note = diagram.notes[n]!
-        const nLines = note.text.split('\\n')
+        const nLines = splitLines(note.text)
         const nWidth = Math.max(...nLines.map(l => l.length)) + 4
         const nHeight = nLines.length + 2
 
@@ -194,25 +207,48 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
   }
 
   const canvas = mkCanvas(totalW, totalH - 1)
+  const rc = mkRoleCanvas(totalW, totalH - 1)
 
-  // ---- DRAW: helper to place a bordered actor box ----
+  /** Set a character on the canvas and track its role. */
+  function setC(x: number, y: number, ch: string, role: CharRole): void {
+    if (x >= 0 && x < canvas.length && y >= 0 && y < (canvas[0]?.length ?? 0)) {
+      canvas[x]![y] = ch
+      setRole(rc, x, y, role)
+    }
+  }
+
+  // ---- DRAW: helper to place a bordered actor box (supports multi-line labels) ----
 
   function drawActorBox(cx: number, topY: number, label: string): void {
-    const w = label.length + 2 * boxPad + 2
+    const lines = splitLines(label)
+    const maxW = maxLineWidth(label)
+    const w = maxW + 2 * boxPad + 2
+    const h = lines.length + 2  // lines + top/bottom border
     const left = cx - Math.floor(w / 2)
+
     // Top border
-    canvas[left]![topY] = TL
-    for (let x = 1; x < w - 1; x++) canvas[left + x]![topY] = H
-    canvas[left + w - 1]![topY] = TR
-    // Sides + label
-    canvas[left]![topY + 1] = V
-    canvas[left + w - 1]![topY + 1] = V
-    const ls = left + 1 + boxPad
-    for (let i = 0; i < label.length; i++) canvas[ls + i]![topY + 1] = label[i]!
+    setC(left, topY, TL, 'border')
+    for (let x = 1; x < w - 1; x++) setC(left + x, topY, H, 'border')
+    setC(left + w - 1, topY, TR, 'border')
+
+    // Content lines (centered horizontally within the box)
+    for (let i = 0; i < lines.length; i++) {
+      const row = topY + 1 + i
+      setC(left, row, V, 'border')
+      setC(left + w - 1, row, V, 'border')
+      // Center this line within the box
+      const line = lines[i]!
+      const ls = left + 1 + boxPad + Math.floor((maxW - line.length) / 2)
+      for (let j = 0; j < line.length; j++) {
+        setC(ls + j, row, line[j]!, 'text')
+      }
+    }
+
     // Bottom border
-    canvas[left]![topY + 2] = BL
-    for (let x = 1; x < w - 1; x++) canvas[left + x]![topY + 2] = H
-    canvas[left + w - 1]![topY + 2] = BR
+    const bottomY = topY + h - 1
+    setC(left, bottomY, BL, 'border')
+    for (let x = 1; x < w - 1; x++) setC(left + x, bottomY, H, 'border')
+    setC(left + w - 1, bottomY, BR, 'border')
   }
 
   // ---- DRAW: lifelines ----
@@ -220,7 +256,7 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
   for (let i = 0; i < diagram.actors.length; i++) {
     const x = llX[i]!
     for (let y = actorBoxH; y <= footerY; y++) {
-      canvas[x]![y] = V
+      setC(x, y, V, 'line')
     }
   }
 
@@ -233,8 +269,8 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
 
     // Lifeline junctions on box borders (Unicode only)
     if (!useAscii) {
-      canvas[llX[i]!]![actorBoxH - 1] = JT // bottom of header → ┬
-      canvas[llX[i]!]![footerY] = JB        // top of footer → ┴
+      setC(llX[i]!, actorBoxH - 1, JT, 'junction')
+      setC(llX[i]!, footerY, JB, 'junction')
     }
   }
 
@@ -262,46 +298,52 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
       const loopW = Math.max(4, 4)
 
       // Row 0: start junction + horizontal + top-right corner
-      canvas[fromX]![y0] = JL
-      for (let x = fromX + 1; x < fromX + loopW; x++) canvas[x]![y0] = lineChar
-      canvas[fromX + loopW]![y0] = useAscii ? '+' : '┐'
+      setC(fromX, y0, JL, 'junction')
+      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0, lineChar, 'line')
+      setC(fromX + loopW, y0, useAscii ? '+' : '┐', 'corner')
 
       // Row 1: vertical on right side + label
-      canvas[fromX + loopW]![y0 + 1] = V
+      setC(fromX + loopW, y0 + 1, V, 'line')
       const labelX = fromX + loopW + 2
       for (let i = 0; i < msg.label.length; i++) {
-        if (labelX + i < totalW) canvas[labelX + i]![y0 + 1] = msg.label[i]!
+        if (labelX + i < totalW) setC(labelX + i, y0 + 1, msg.label[i]!, 'text')
       }
 
       // Row 2: arrow-back + horizontal + bottom-right corner
       const arrowChar = isFilled ? (useAscii ? '<' : '◀') : (useAscii ? '<' : '◁')
-      canvas[fromX]![y0 + 2] = arrowChar
-      for (let x = fromX + 1; x < fromX + loopW; x++) canvas[x]![y0 + 2] = lineChar
-      canvas[fromX + loopW]![y0 + 2] = useAscii ? '+' : '┘'
+      setC(fromX, y0 + 2, arrowChar, 'arrow')
+      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0 + 2, lineChar, 'line')
+      setC(fromX + loopW, y0 + 2, useAscii ? '+' : '┘', 'corner')
     } else {
       // Normal message: label on row above, arrow on row below
       const labelY = msgLabelY[m]!
       const arrowY = msgArrowY[m]!
       const leftToRight = fromX < toX
 
-      // Draw label centered between the two lifelines
+      // Draw label centered between the two lifelines (supports multi-line)
       const midX = Math.floor((fromX + toX) / 2)
-      const labelStart = midX - Math.floor(msg.label.length / 2)
-      for (let i = 0; i < msg.label.length; i++) {
-        const lx = labelStart + i
-        if (lx >= 0 && lx < totalW) canvas[lx]![labelY] = msg.label[i]!
+      const msgLines = splitLines(msg.label)
+
+      for (let lineIdx = 0; lineIdx < msgLines.length; lineIdx++) {
+        const line = msgLines[lineIdx]!
+        const labelStart = midX - Math.floor(line.length / 2)
+        const y = labelY + lineIdx
+        for (let i = 0; i < line.length; i++) {
+          const lx = labelStart + i
+          if (lx >= 0 && lx < totalW) setC(lx, y, line[i]!, 'text')
+        }
       }
 
       // Draw arrow line
       if (leftToRight) {
-        for (let x = fromX + 1; x < toX; x++) canvas[x]![arrowY] = lineChar
+        for (let x = fromX + 1; x < toX; x++) setC(x, arrowY, lineChar, 'line')
         // Arrowhead at destination
         const ah = isFilled ? (useAscii ? '>' : '▶') : (useAscii ? '>' : '▷')
-        canvas[toX]![arrowY] = ah
+        setC(toX, arrowY, ah, 'arrow')
       } else {
-        for (let x = toX + 1; x < fromX; x++) canvas[x]![arrowY] = lineChar
+        for (let x = toX + 1; x < fromX; x++) setC(x, arrowY, lineChar, 'line')
         const ah = isFilled ? (useAscii ? '<' : '◀') : (useAscii ? '<' : '◁')
-        canvas[toX]![arrowY] = ah
+        setC(toX, arrowY, ah, 'arrow')
       }
     }
   }
@@ -330,24 +372,29 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
     const bRight = Math.min(totalW - 1, maxLX + 4)
 
     // Top border with block type label
-    canvas[bLeft]![topY] = TL
-    for (let x = bLeft + 1; x < bRight; x++) canvas[x]![topY] = H
-    canvas[bRight]![topY] = TR
-    // Write block header label over the top border
+    setC(bLeft, topY, TL, 'border')
+    for (let x = bLeft + 1; x < bRight; x++) setC(x, topY, H, 'border')
+    setC(bRight, topY, TR, 'border')
+    // Write block header label over the top border (supports multi-line)
     const hdrLabel = block.label ? `${block.type} [${block.label}]` : block.type
-    for (let i = 0; i < hdrLabel.length && bLeft + 1 + i < bRight; i++) {
-      canvas[bLeft + 1 + i]![topY] = hdrLabel[i]!
+    const hdrLines = splitLines(hdrLabel)
+
+    for (let lineIdx = 0; lineIdx < hdrLines.length && topY + lineIdx < botY; lineIdx++) {
+      const line = hdrLines[lineIdx]!
+      for (let i = 0; i < line.length && bLeft + 1 + i < bRight; i++) {
+        setC(bLeft + 1 + i, topY + lineIdx, line[i]!, 'text')
+      }
     }
 
     // Bottom border
-    canvas[bLeft]![botY] = BL
-    for (let x = bLeft + 1; x < bRight; x++) canvas[x]![botY] = H
-    canvas[bRight]![botY] = BR
+    setC(bLeft, botY, BL, 'border')
+    for (let x = bLeft + 1; x < bRight; x++) setC(x, botY, H, 'border')
+    setC(bRight, botY, BR, 'border')
 
     // Side borders
     for (let y = topY + 1; y < botY; y++) {
-      canvas[bLeft]![y] = V
-      canvas[bRight]![y] = V
+      setC(bLeft, y, V, 'border')
+      setC(bRight, y, V, 'border')
     }
 
     // Dividers
@@ -355,15 +402,15 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
       const dY = divYMap.get(`${b}:${d}`)
       if (dY === undefined) continue
       const dashChar = isDashedH()
-      canvas[bLeft]![dY] = JL
-      for (let x = bLeft + 1; x < bRight; x++) canvas[x]![dY] = dashChar
-      canvas[bRight]![dY] = JR
+      setC(bLeft, dY, JL, 'junction')
+      for (let x = bLeft + 1; x < bRight; x++) setC(x, dY, dashChar, 'line')
+      setC(bRight, dY, JR, 'junction')
       // Divider label
       const dLabel = block.dividers[d]!.label
       if (dLabel) {
         const dStr = `[${dLabel}]`
         for (let i = 0; i < dStr.length && bLeft + 1 + i < bRight; i++) {
-          canvas[bLeft + 1 + i]![dY] = dStr[i]!
+          setC(bLeft + 1 + i, dY, dStr[i]!, 'text')
         }
       }
     }
@@ -374,27 +421,28 @@ export function renderSequenceAscii(text: string, config: AsciiConfig): string {
   for (const np of notePositions) {
     // Ensure canvas is big enough
     increaseSize(canvas, np.x + np.width, np.y + np.height)
+    increaseRoleCanvasSize(rc, np.x + np.width, np.y + np.height)
     // Top border
-    canvas[np.x]![np.y] = TL
-    for (let x = 1; x < np.width - 1; x++) canvas[np.x + x]![np.y] = H
-    canvas[np.x + np.width - 1]![np.y] = TR
+    setC(np.x, np.y, TL, 'border')
+    for (let x = 1; x < np.width - 1; x++) setC(np.x + x, np.y, H, 'border')
+    setC(np.x + np.width - 1, np.y, TR, 'border')
     // Content rows
     for (let l = 0; l < np.lines.length; l++) {
       const ly = np.y + 1 + l
-      canvas[np.x]![ly] = V
-      canvas[np.x + np.width - 1]![ly] = V
+      setC(np.x, ly, V, 'border')
+      setC(np.x + np.width - 1, ly, V, 'border')
       for (let i = 0; i < np.lines[l]!.length; i++) {
-        canvas[np.x + 2 + i]![ly] = np.lines[l]![i]!
+        setC(np.x + 2 + i, ly, np.lines[l]![i]!, 'text')
       }
     }
     // Bottom border
     const by = np.y + np.height - 1
-    canvas[np.x]![by] = BL
-    for (let x = 1; x < np.width - 1; x++) canvas[np.x + x]![by] = H
-    canvas[np.x + np.width - 1]![by] = BR
+    setC(np.x, by, BL, 'border')
+    for (let x = 1; x < np.width - 1; x++) setC(np.x + x, by, H, 'border')
+    setC(np.x + np.width - 1, by, BR, 'border')
   }
 
-  return canvasToString(canvas)
+  return canvasToString(canvas, { roleCanvas: rc, colorMode, theme })
 
   // ---- Helper: dashed horizontal character ----
   function isDashedH(): string {

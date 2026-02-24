@@ -70,10 +70,10 @@ export const MIX = {
   textMuted:    40,
   /** Faint text (de-emphasized): fg mixed at 25% */
   textFaint:    25,
-  /** Edge/connector lines: fg mixed at 30% */
-  line:         30,
-  /** Arrow head fill: fg mixed at 50% */
-  arrow:        50,
+  /** Edge/connector lines: fg mixed at 50% for clear visibility */
+  line:         50,
+  /** Arrow head fill: fg mixed at 85% for clear visibility */
+  arrow:        85,
   /** Node fill tint: fg mixed at 3% */
   nodeFill:     3,
   /** Node/group stroke: fg mixed at 20% */
@@ -94,6 +94,9 @@ export const MIX = {
 // ============================================================================
 
 export const THEMES: Record<string, DiagramColors> = {
+  'zinc-light': {
+    bg: '#FFFFFF', fg: '#27272A',
+  },
   'zinc-dark': {
     bg: '#18181B', fg: '#FAFAFA',
   },
@@ -193,7 +196,7 @@ interface ShikiThemeLike {
  *
  * const hl = await getSingletonHighlighter({ themes: ['tokyo-night'] })
  * const colors = fromShikiTheme(hl.getTheme('tokyo-night'))
- * const svg = await renderMermaid(code, colors)
+ * const svg = renderMermaidSVG(code, colors)
  * ```
  */
 export function fromShikiTheme(theme: ShikiThemeLike): DiagramColors {

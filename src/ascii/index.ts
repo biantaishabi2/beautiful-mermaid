@@ -12,19 +12,24 @@
 //   - ER diagrams (erDiagram) — grid layout with crow's foot notation
 //
 // Usage:
-//   import { renderMermaidAscii } from 'beautiful-mermaid'
-//   const ascii = renderMermaidAscii('graph LR\n  A --> B')
+//   import { renderMermaidASCII } from 'beautiful-mermaid'
+//   const ascii = renderMermaidASCII('graph LR\n  A --> B')
 // ============================================================================
 
 import { parseMermaid } from '../parser.ts'
 import { convertToAsciiGraph } from './converter.ts'
 import { createMapping } from './grid.ts'
 import { drawGraph } from './draw.ts'
-import { canvasToString, flipCanvasVertically } from './canvas.ts'
+import { canvasToString, flipCanvasVertically, flipRoleCanvasVertically } from './canvas.ts'
 import { renderSequenceAscii } from './sequence.ts'
 import { renderClassAscii } from './class-diagram.ts'
 import { renderErAscii } from './er-diagram.ts'
-import type { AsciiConfig } from './types.ts'
+import { detectColorMode, DEFAULT_ASCII_THEME, diagramColorsToAsciiTheme } from './ansi.ts'
+import type { AsciiConfig, AsciiTheme, ColorMode } from './types.ts'
+
+// Re-export types for external use
+export type { AsciiTheme, ColorMode }
+export { DEFAULT_ASCII_THEME, detectColorMode, diagramColorsToAsciiTheme }
 
 export interface AsciiRenderOptions {
   /** true = ASCII chars (+,-,|,>), false = Unicode box-drawing (┌,─,│,►). Default: false */
@@ -35,6 +40,19 @@ export interface AsciiRenderOptions {
   paddingY?: number
   /** Padding inside node boxes. Default: 1 */
   boxBorderPadding?: number
+  /**
+   * Color mode for output.
+   * - 'none': No colors (plain text)
+   * - 'auto': Auto-detect (terminal ANSI capabilities, or HTML in browsers)
+   * - 'ansi16': 16-color ANSI
+   * - 'ansi256': 256-color xterm
+   * - 'truecolor': 24-bit RGB
+   * - 'html': HTML <span> tags with inline color styles (for browser rendering)
+   * Default: 'auto'
+   */
+  colorMode?: ColorMode | 'auto'
+  /** Theme colors for ASCII output. Uses default theme if not provided. */
+  theme?: Partial<AsciiTheme>
 }
 
 /**
@@ -42,7 +60,7 @@ export interface AsciiRenderOptions {
  * Mirrors the detection logic in src/index.ts for the SVG renderer.
  */
 function detectDiagramType(text: string): 'flowchart' | 'sequence' | 'class' | 'er' {
-  const firstLine = text.trim().split(/[\n;]/)[0]?.trim().toLowerCase() ?? ''
+  const firstLine = text.trim().split('\n')[0]?.trim().toLowerCase() ?? ''
 
   if (/^sequencediagram\s*$/.test(firstLine)) return 'sequence'
   if (/^classdiagram\s*$/.test(firstLine)) return 'class'
@@ -78,7 +96,7 @@ function detectDiagramType(text: string): 'flowchart' | 'sequence' | 'class' | '
  * // +---+     +---+     +---+
  * ```
  */
-export function renderMermaidAscii(
+export function renderMermaidASCII(
   text: string,
   options: AsciiRenderOptions = {},
 ): string {
@@ -90,17 +108,25 @@ export function renderMermaidAscii(
     graphDirection: 'TD', // default, overridden for flowcharts below
   }
 
+  // Resolve color mode ('auto' or unset → detect environment, otherwise use specified mode)
+  const colorMode: ColorMode = options.colorMode === 'auto' || options.colorMode === undefined
+    ? detectColorMode()
+    : options.colorMode
+
+  // Merge user theme with defaults
+  const theme: AsciiTheme = { ...DEFAULT_ASCII_THEME, ...options.theme }
+
   const diagramType = detectDiagramType(text)
 
   switch (diagramType) {
     case 'sequence':
-      return renderSequenceAscii(text, config)
+      return renderSequenceAscii(text, config, colorMode, theme)
 
     case 'class':
-      return renderClassAscii(text, config)
+      return renderClassAscii(text, config, colorMode, theme)
 
     case 'er':
-      return renderErAscii(text, config)
+      return renderErAscii(text, config, colorMode, theme)
 
     case 'flowchart':
     default: {
@@ -124,9 +150,17 @@ export function renderMermaidAscii(
       // The grid layout ran as TD; flipping + character remapping produces BT.
       if (parsed.direction === 'BT') {
         flipCanvasVertically(graph.canvas)
+        flipRoleCanvasVertically(graph.roleCanvas)
       }
 
-      return canvasToString(graph.canvas)
+      return canvasToString(graph.canvas, {
+        roleCanvas: graph.roleCanvas,
+        colorMode,
+        theme,
+      })
     }
   }
 }
+
+/** @deprecated Use `renderMermaidASCII` */
+export const renderMermaidAscii = renderMermaidASCII
