@@ -731,6 +731,7 @@ function isPositionedGroupContract(value: unknown): value is PositionedGroupCont
 
 function isMermaidGraphContract(value: unknown): value is MermaidGraphContract {
   if (!isPlainObject(value)) return false
+  if (!isDirection(value.direction)) return false
   if (!isRecordOfMermaidNodes(value.nodes)) return false
   if (!isArrayOf(value.edges, edge => isMermaidEdgeContract(edge))) return false
   if (!isArrayOf(value.subgraphs, subgraph => isMermaidSubgraphContract(subgraph))) return false

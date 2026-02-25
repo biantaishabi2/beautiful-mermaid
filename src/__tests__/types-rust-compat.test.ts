@@ -217,6 +217,27 @@ describe('types rust compat', () => {
     expect(Array.from(result.graph.nodes.keys())).toEqual(['n1', 'n2', 'n3'])
   })
 
+  it('falls back to ts when mermaidGraph direction is invalid', () => {
+    const graph = makeGraph()
+    const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          return {
+            mermaidGraph: {
+              ...payload.mermaidGraph!,
+              direction: 'INVALID_DIRECTION',
+            },
+          }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+    expect(Array.from(result.graph.nodes.keys())).toEqual(['n1', 'n2', 'n3'])
+  })
+
   it('falls back to ts when positionedGraph nested contract fields are invalid', () => {
     const positioned = makePositionedGraph()
 
