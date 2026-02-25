@@ -61,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo }}
           token: ${{ secrets.NIUMA_PAT }}
           fetch-depth: 0
 
@@ -100,7 +101,17 @@ jobs:
           REPO: ${{ inputs.repo }}
         run: |
           if PR_NUMBER=$("$NIUMA_BIN" resolve-pr --repo "$REPO" --issue "$ISSUE_NUMBER"); then
-            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            if pr_view_err="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number 2>&1 >/dev/null)"; then
+              echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            else
+              if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
+                echo "::warning::解析到 PR #$PR_NUMBER，但在 $REPO 中不存在，跳过 gate"
+                echo "pr_number=" >> "$GITHUB_OUTPUT"
+              else
+                echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err"
+                exit 1
+              fi
+            fi
           else
             echo "::warning::未在 issue #${ISSUE_NUMBER} 的评论中找到可用 PR 号"
             echo "pr_number=" >> "$GITHUB_OUTPUT"
@@ -111,14 +122,46 @@ jobs:
         if: inputs.trigger_source == 'review' && steps.find_pr.outputs.pr_number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
+          REPO: ${{ inputs.repo }}
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
         run: |
-          PR_STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state')
+          if ! pr_view_err="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state 2>&1 >/dev/null)"; then
+            if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
+              echo "::warning::PR #$PR_NUMBER 在 $REPO 中不存在，跳过 gate"
+              echo "pr_exists=false" >> "$GITHUB_OUTPUT"
+              echo "pr_state=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err"
+            exit 1
+          fi
+          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state -q '.state')
+          echo "pr_exists=true" >> "$GITHUB_OUTPUT"
           echo "pr_state=$PR_STATE" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Human PR Exists
+        id: human_pr
+        if: inputs.trigger_source == 'human' && inputs.pr_number != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
+          REPO: ${{ inputs.repo }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          if pr_view_err="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number 2>&1 >/dev/null)"; then
+            echo "pr_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
+              echo "::warning::PR #$PR_NUMBER 在 $REPO 中不存在，跳过迭代与 gate"
+              echo "pr_exists=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err"
+              exit 1
+            fi
+          fi
 
       - name: Iterate on Review (from bot review)
         id: iterate_review
-        if: inputs.trigger_source == 'review' && steps.find_pr.outputs.pr_number != ''
+        if: inputs.trigger_source == 'review' && steps.find_pr.outputs.pr_number != '' && steps.pr_state.outputs.pr_exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           REPO: ${{ inputs.repo }}
@@ -141,7 +184,7 @@ jobs:
           echo "issue_number=$issue" >> "$GITHUB_OUTPUT"
 
       - name: Run PR Gate (from bot review)
-        if: steps.iterate_review.outputs.decision == 'run' && steps.find_pr.outputs.pr_number != '' && steps.iterate_review.outputs.issue_number != ''
+        if: steps.iterate_review.outputs.decision == 'run' && steps.find_pr.outputs.pr_number != '' && steps.iterate_review.outputs.issue_number != '' && steps.pr_state.outputs.pr_exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           REPO: ${{ inputs.repo }}
@@ -165,7 +208,7 @@ jobs:
 
       - name: Iterate on Review (from human)
         id: iterate_human
-        if: inputs.trigger_source == 'human' && inputs.pr_number != ''
+        if: inputs.trigger_source == 'human' && inputs.pr_number != '' && steps.human_pr.outputs.pr_exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           REPO: ${{ inputs.repo }}
@@ -192,7 +235,7 @@ jobs:
           echo "issue_number=$issue" >> "$GITHUB_OUTPUT"
 
       - name: Run PR Gate (from human)
-        if: steps.iterate_human.outputs.decision == 'run' && inputs.pr_number != '' && steps.iterate_human.outputs.issue_number != ''
+        if: steps.iterate_human.outputs.decision == 'run' && inputs.pr_number != '' && steps.iterate_human.outputs.issue_number != '' && steps.human_pr.outputs.pr_exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           REPO: ${{ inputs.repo }}

@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/beautiful-mermaid-napi",
+  "crates/beautiful-mermaid-rs",
+]
+default-members = ["crates/beautiful-mermaid-napi"]

@@ -194,7 +194,7 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
     }
 
     // --- composite state start: `state CompositeState {` ---
-    const compositeMatch = line.match(/^state\s+(?:"([^"]+)"\s+as\s+)?(\w+)\s*\{$/)
+    const compositeMatch = line.match(/^state\s+(?:"([^"]+)"\s+as\s+)?([A-Za-z_][\w-]*)\s*\{$/)
     if (compositeMatch) {
       const label = compositeMatch[1] ?? compositeMatch[2]!
       const id = compositeMatch[2]!
@@ -222,7 +222,7 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
     }
 
     // --- state alias: `state "Description" as s1` (without brace) ---
-    const stateAliasMatch = line.match(/^state\s+"([^"]+)"\s+as\s+(\w+)\s*$/)
+    const stateAliasMatch = line.match(/^state\s+"([^"]+)"\s+as\s+([A-Za-z_][\w-]*)\s*$/)
     if (stateAliasMatch) {
       const label = normalizeBrTags(stateAliasMatch[1]!)
       const id = stateAliasMatch[2]!
@@ -231,7 +231,9 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
     }
 
     // --- transition: `s1 --> s2` or `s1 --> s2 : label` or `[*] --> s1` ---
-    const transitionMatch = line.match(/^(\[\*\]|[\w-]+)\s*(-->)\s*(\[\*\]|[\w-]+)(?:\s*:\s*(.+))?$/)
+    const transitionMatch = line.match(
+      /^(\[\*\]|[A-Za-z_][\w-]*)\s*(-->)\s*(\[\*\]|[A-Za-z_][\w-]*)(?:\s*:\s*(.+))?$/
+    )
     if (transitionMatch) {
       let sourceId = transitionMatch[1]!
       let targetId = transitionMatch[3]!
@@ -269,7 +271,7 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
     }
 
     // --- state description: `s1 : Description` ---
-    const stateDescMatch = line.match(/^([\w-]+)\s*:\s*(.+)$/)
+    const stateDescMatch = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.+)$/)
     if (stateDescMatch) {
       const id = stateDescMatch[1]!
       const label = normalizeBrTags(stateDescMatch[2]!.trim())
@@ -364,32 +366,32 @@ const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
  */
 const NODE_PATTERNS: Array<{ regex: RegExp; shape: NodeShape }> = [
   // Triple delimiters (must be first)
-  { regex: /^([\w-]+)\(\(\((.+?)\)\)\)/, shape: 'doublecircle' },  // A(((text)))
+  { regex: /^([A-Za-z_][\w-]*)\(\(\((.+?)\)\)\)/, shape: 'doublecircle' },  // A(((text)))
 
   // Double delimiters with mixed brackets
-  { regex: /^([\w-]+)\(\[(.+?)\]\)/,     shape: 'stadium' },       // A([text])
-  { regex: /^([\w-]+)\(\((.+?)\)\)/,     shape: 'circle' },        // A((text))
-  { regex: /^([\w-]+)\[\[(.+?)\]\]/,     shape: 'subroutine' },    // A[[text]]
-  { regex: /^([\w-]+)\[\((.+?)\)\]/,     shape: 'cylinder' },      // A[(text)]
+  { regex: /^([A-Za-z_][\w-]*)\(\[(.+?)\]\)/,     shape: 'stadium' },       // A([text])
+  { regex: /^([A-Za-z_][\w-]*)\(\((.+?)\)\)/,     shape: 'circle' },        // A((text))
+  { regex: /^([A-Za-z_][\w-]*)\[\[(.+?)\]\]/,     shape: 'subroutine' },    // A[[text]]
+  { regex: /^([A-Za-z_][\w-]*)\[\((.+?)\)\]/,     shape: 'cylinder' },      // A[(text)]
 
   // Trapezoid variants — must come before plain [text]
-  { regex: /^([\w-]+)\[\/(.+?)\\\]/,     shape: 'trapezoid' },     // A[/text\]
-  { regex: /^([\w-]+)\[\\(.+?)\/\]/,     shape: 'trapezoid-alt' }, // A[\text/]
+  { regex: /^([A-Za-z_][\w-]*)\[\/(.+?)\\\]/,     shape: 'trapezoid' },     // A[/text\]
+  { regex: /^([A-Za-z_][\w-]*)\[\\(.+?)\/\]/,     shape: 'trapezoid-alt' }, // A[\text/]
 
   // Asymmetric flag shape
-  { regex: /^([\w-]+)>(.+?)\]/,          shape: 'asymmetric' },    // A>text]
+  { regex: /^([A-Za-z_][\w-]*)>(.+?)\]/,          shape: 'asymmetric' },    // A>text]
 
   // Double curly braces (hexagon) — must come before single {text}
-  { regex: /^([\w-]+)\{\{(.+?)\}\}/,     shape: 'hexagon' },       // A{{text}}
+  { regex: /^([A-Za-z_][\w-]*)\{\{(.+?)\}\}/,     shape: 'hexagon' },       // A{{text}}
 
   // Single-char delimiters (last — most common, least specific)
-  { regex: /^([\w-]+)\[(.+?)\]/,         shape: 'rectangle' },     // A[text]
-  { regex: /^([\w-]+)\((.+?)\)/,         shape: 'rounded' },       // A(text)
-  { regex: /^([\w-]+)\{(.+?)\}/,         shape: 'diamond' },       // A{text}
+  { regex: /^([A-Za-z_][\w-]*)\[(.+?)\]/,         shape: 'rectangle' },     // A[text]
+  { regex: /^([A-Za-z_][\w-]*)\((.+?)\)/,         shape: 'rounded' },       // A(text)
+  { regex: /^([A-Za-z_][\w-]*)\{(.+?)\}/,         shape: 'diamond' },       // A{text}
 ]
 
 /** Regex for a bare node reference (just an ID, no shape brackets) */
-const BARE_NODE_REGEX = /^([\w-]+)/
+const BARE_NODE_REGEX = /^([A-Za-z_][\w-]*)/
 
 /** Regex for ::: class shorthand suffix — matches :::className immediately after a node */
 const CLASS_SHORTHAND_REGEX = /^:::([\w][\w-]*)/
