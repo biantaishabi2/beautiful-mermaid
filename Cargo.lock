@@ -18,6 +18,7 @@ dependencies = [
  "beautiful-mermaid-rs",
  "napi",
  "napi-derive",
+ "regex",
  "serde",
  "serde_json",
 ]

@@ -8,6 +8,8 @@ use beautiful_mermaid_rs::utils::{
     strip_formatting_tags as rs_strip_formatting_tags,
 };
 
+mod text_metrics;
+
 #[napi]
 pub fn echo_buffer(input: Uint8Array) -> Uint8Array {
     input
