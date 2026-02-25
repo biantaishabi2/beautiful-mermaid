@@ -415,27 +415,79 @@ export function fromMermaidGraphContract(contract: MermaidGraphContract): Mermai
 }
 
 function toPositionedGroupContract(group: PositionedGroup): PositionedGroupContract {
-  return {
+  const rootContract: PositionedGroupContract = {
     id: group.id,
     label: group.label,
     x: group.x,
     y: group.y,
     width: group.width,
     height: group.height,
-    children: group.children.map(toPositionedGroupContract),
+    children: [],
   }
+
+  const stack: Array<{ source: PositionedGroup; target: PositionedGroupContract; depth: number }> = [
+    { source: group, target: rootContract, depth: 0 },
+  ]
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!
+    if (frame.depth > MAX_GROUP_CONTRACT_DEPTH) {
+      throw new RangeError(`Group 深度超过限制（>${MAX_GROUP_CONTRACT_DEPTH}）`)
+    }
+    for (const child of frame.source.children) {
+      const childContract: PositionedGroupContract = {
+        id: child.id,
+        label: child.label,
+        x: child.x,
+        y: child.y,
+        width: child.width,
+        height: child.height,
+        children: [],
+      }
+      frame.target.children.push(childContract)
+      stack.push({ source: child, target: childContract, depth: frame.depth + 1 })
+    }
+  }
+
+  return rootContract
 }
 
 function fromPositionedGroupContract(group: PositionedGroupContract): PositionedGroup {
-  return {
+  const rootGroup: PositionedGroup = {
     id: group.id,
     label: group.label,
     x: group.x,
     y: group.y,
     width: group.width,
     height: group.height,
-    children: group.children.map(fromPositionedGroupContract),
+    children: [],
   }
+
+  const stack: Array<{ source: PositionedGroupContract; target: PositionedGroup; depth: number }> = [
+    { source: group, target: rootGroup, depth: 0 },
+  ]
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!
+    if (frame.depth > MAX_GROUP_CONTRACT_DEPTH) {
+      throw new RangeError(`Group 深度超过限制（>${MAX_GROUP_CONTRACT_DEPTH}）`)
+    }
+    for (const child of frame.source.children) {
+      const childGroup: PositionedGroup = {
+        id: child.id,
+        label: child.label,
+        x: child.x,
+        y: child.y,
+        width: child.width,
+        height: child.height,
+        children: [],
+      }
+      frame.target.children.push(childGroup)
+      stack.push({ source: child, target: childGroup, depth: frame.depth + 1 })
+    }
+  }
+
+  return rootGroup
 }
 
 export function toPositionedGraphContract(graph: PositionedGraph): PositionedGraphContract {

@@ -58,6 +58,74 @@ function makeDeepSubgraphGraph(depth: number): MermaidGraph {
   return graph
 }
 
+function makePositionedGraph(): PositionedGraph {
+  return {
+    width: 200,
+    height: 120,
+    nodes: [
+      {
+        id: 'n1',
+        label: 'Node 1',
+        shape: 'rectangle',
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 40,
+      },
+    ],
+    edges: [
+      {
+        source: 'n1',
+        target: 'n1',
+        style: 'solid',
+        hasArrowStart: false,
+        hasArrowEnd: true,
+        points: [{ x: 0, y: 0 }, { x: 12, y: 8 }],
+      },
+    ],
+    groups: [
+      {
+        id: 'g1',
+        label: 'group',
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 120,
+        children: [],
+      },
+    ],
+  }
+}
+
+function makeDeepGroupPositionedGraph(depth: number): PositionedGraph {
+  const graph = makePositionedGraph()
+  const root = {
+    id: 'g-root',
+    label: 'g-root',
+    x: 0,
+    y: 0,
+    width: 200,
+    height: 120,
+    children: [] as PositionedGraph['groups'],
+  }
+  let current = root
+  for (let i = 1; i <= depth; i++) {
+    const child = {
+      id: `g-${i}`,
+      label: `g-${i}`,
+      x: i,
+      y: i,
+      width: 200 - i,
+      height: 120 - i,
+      children: [] as PositionedGraph['groups'],
+    }
+    current.children.push(child)
+    current = child
+  }
+  graph.groups = [root]
+  return graph
+}
+
 describe('types rust compat', () => {
   it('keeps map insertion order through contract roundtrip', () => {
     const graph = makeGraph()
@@ -74,42 +142,7 @@ describe('types rust compat', () => {
   })
 
   it('omits optional fields instead of serializing null', () => {
-    const positioned: PositionedGraph = {
-      width: 200,
-      height: 120,
-      nodes: [
-        {
-          id: 'n1',
-          label: 'Node 1',
-          shape: 'rectangle',
-          x: 10,
-          y: 10,
-          width: 100,
-          height: 40,
-        },
-      ],
-      edges: [
-        {
-          source: 'n1',
-          target: 'n1',
-          style: 'solid',
-          hasArrowStart: false,
-          hasArrowEnd: true,
-          points: [{ x: 0, y: 0 }, { x: 12, y: 8 }],
-        },
-      ],
-      groups: [
-        {
-          id: 'g1',
-          label: 'group',
-          x: 0,
-          y: 0,
-          width: 200,
-          height: 120,
-          children: [],
-        },
-      ],
-    }
+    const positioned = makePositionedGraph()
 
     const contract = toPositionedGraphContract(positioned)
     expect(contract.nodes[0]).not.toHaveProperty('inlineStyle')
@@ -183,42 +216,7 @@ describe('types rust compat', () => {
   })
 
   it('falls back to ts when positionedGraph nested contract fields are invalid', () => {
-    const positioned: PositionedGraph = {
-      width: 200,
-      height: 120,
-      nodes: [
-        {
-          id: 'n1',
-          label: 'Node 1',
-          shape: 'rectangle',
-          x: 10,
-          y: 10,
-          width: 100,
-          height: 40,
-        },
-      ],
-      edges: [
-        {
-          source: 'n1',
-          target: 'n1',
-          style: 'solid',
-          hasArrowStart: false,
-          hasArrowEnd: true,
-          points: [{ x: 0, y: 0 }, { x: 12, y: 8 }],
-        },
-      ],
-      groups: [
-        {
-          id: 'g1',
-          label: 'group',
-          x: 0,
-          y: 0,
-          width: 200,
-          height: 120,
-          children: [],
-        },
-      ],
-    }
+    const positioned = makePositionedGraph()
 
     const result = normalizePositionedGraphWithRustFallback(positioned, {
       useRust: true,
@@ -231,6 +229,44 @@ describe('types rust compat', () => {
                 {
                   ...payload.positionedGraph!.edges[0],
                   points: [{ x: 1, y: 1 }, { bad: true }],
+                },
+              ],
+            },
+          }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+    expect(result.graph).toEqual(positioned)
+  })
+
+  it('falls back to ts when positionedGraph nested group fields are invalid', () => {
+    const positioned = makePositionedGraph()
+    const result = normalizePositionedGraphWithRustFallback(positioned, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          const positionedGraph = payload.positionedGraph!
+          const rootGroup = positionedGraph.groups[0]!
+          return {
+            positionedGraph: {
+              ...positionedGraph,
+              groups: [
+                {
+                  ...rootGroup,
+                  children: [
+                    {
+                      id: 'g-child',
+                      label: 'child',
+                      x: 1,
+                      y: 1,
+                      width: 'invalid-width',
+                      height: 20,
+                      children: [],
+                    },
+                  ],
                 },
               ],
             },
@@ -296,6 +332,36 @@ describe('types rust compat', () => {
   it('falls back to ts when nested subgraph depth exceeds limit', () => {
     const graph = makeDeepSubgraphGraph(257)
     const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          return payload
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('深度超过限制')
+  })
+
+  it('accepts nested groups at depth boundary', () => {
+    const positioned = makeDeepGroupPositionedGraph(256)
+    const result = normalizePositionedGraphWithRustFallback(positioned, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          return payload
+        },
+      },
+    })
+
+    expect(result.engine).toBe('rust')
+    expect(result.fallbackReason).toBeUndefined()
+  })
+
+  it('falls back to ts when nested group depth exceeds limit', () => {
+    const positioned = makeDeepGroupPositionedGraph(257)
+    const result = normalizePositionedGraphWithRustFallback(positioned, {
       useRust: true,
       runtime: {
         normalizeContracts(payload: TypesContractPayload): unknown {

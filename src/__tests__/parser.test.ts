@@ -646,6 +646,15 @@ describe('parseMermaid – state diagrams', () => {
     expect(g.nodes.get('Idle')!.shape).toBe('rounded')
   })
 
+  it('ignores numeric-leading state IDs to avoid integer-like map keys', () => {
+    const g = parseMermaid(`stateDiagram-v2
+      1 --> 2
+      state "Numeric Alias" as 3state
+      4state : Invalid`)
+    expect(g.nodes.size).toBe(0)
+    expect(g.edges).toHaveLength(0)
+  })
+
   it('parses transition labels', () => {
     const g = parseMermaid(`stateDiagram-v2
       Idle --> Active : start`)
