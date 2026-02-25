@@ -77,6 +77,14 @@ describe('multiline utils rust parity', () => {
     }
   })
 
+  it('keeps invalid br form with slash-space unchanged', () => {
+    const input = 'a<br/ >b'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('a<br/ >b')
+    expect(rust).toBe(ts)
+  })
+
   it('converts literal \\n to newline', () => {
     const input = 'a\\nb'
     const ts = runTs(() => normalizeBrTags(input))
@@ -99,6 +107,19 @@ describe('multiline utils rust parity', () => {
     const rust = rustAddon.normalizeBrTags(input)
     expect(ts).toBe('<b>text</b>')
     expect(rust).toBe(ts)
+  })
+
+  it('matches overlapping markdown pair behavior for bold/strike', () => {
+    const boldInput = '*****'
+    const strikeInput = '~~~~~'
+    const tsBold = runTs(() => normalizeBrTags(boldInput))
+    const rustBold = rustAddon.normalizeBrTags(boldInput)
+    const tsStrike = runTs(() => normalizeBrTags(strikeInput))
+    const rustStrike = rustAddon.normalizeBrTags(strikeInput)
+    expect(tsBold).toBe('<b>*</b>')
+    expect(rustBold).toBe(tsBold)
+    expect(tsStrike).toBe('<s>~</s>')
+    expect(rustStrike).toBe(tsStrike)
   })
 
   it('handles markdown italic boundary', () => {

@@ -181,12 +181,6 @@ fn parse_br_tag(input: &str, start: usize) -> Option<usize> {
     }
     if bytes.get(index) == Some(&b'/') {
         index += 1;
-        while bytes
-            .get(index)
-            .is_some_and(|byte| byte.is_ascii_whitespace())
-        {
-            index += 1;
-        }
     }
 
     if bytes.get(index) != Some(&b'>') {
@@ -268,18 +262,17 @@ fn replace_markdown_pair(input: &str, marker: &str, open_tag: &str, close_tag: &
         };
         let start = cursor + rel_start;
         let content_start = start + marker.len();
+        if content_start >= input.len() {
+            output.push_str(&input[cursor..]);
+            break;
+        }
 
-        let Some(rel_end) = input[content_start..].find(marker) else {
+        let search_from = content_start + 1;
+        let Some(rel_end) = input[search_from..].find(marker) else {
             output.push_str(&input[cursor..]);
             break;
         };
-        let end = content_start + rel_end;
-
-        if end == content_start {
-            output.push_str(&input[cursor..content_start]);
-            cursor = content_start;
-            continue;
-        }
+        let end = search_from + rel_end;
 
         output.push_str(&input[cursor..start]);
         output.push_str(open_tag);
@@ -492,11 +485,14 @@ mod tests {
     #[test]
     fn normalize_br_tags_handles_markdown_and_html() {
         assert_eq!(normalize_br_tags("a<br>b"), "a\nb");
+        assert_eq!(normalize_br_tags("a<br/ >b"), "a<br/ >b");
         assert_eq!(normalize_br_tags("a\\nb"), "a\nb");
         assert_eq!(normalize_br_tags("\""), "");
         assert_eq!(normalize_br_tags("**text**"), "<b>text</b>");
+        assert_eq!(normalize_br_tags("*****"), "<b>*</b>");
         assert_eq!(normalize_br_tags("*a* 与 * a *"), "<i>a</i> 与 * a *");
         assert_eq!(normalize_br_tags("~~text~~"), "<s>text</s>");
+        assert_eq!(normalize_br_tags("~~~~~"), "<s>~</s>");
         assert_eq!(normalize_br_tags("H<sub>2</sub>O"), "H2O");
     }
 
