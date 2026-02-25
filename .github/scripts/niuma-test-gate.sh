@@ -113,8 +113,11 @@ fi
 
 if [[ -f "crates/beautiful-mermaid-napi/package.json" ]]; then
   log "building N-API package"
-  npm --prefix crates/beautiful-mermaid-napi install
-  npx --prefix crates/beautiful-mermaid-napi napi build --release
+  (
+    cd crates/beautiful-mermaid-napi
+    npm install
+    npx napi build --release
+  )
 fi
 
 log "running bun tests"
