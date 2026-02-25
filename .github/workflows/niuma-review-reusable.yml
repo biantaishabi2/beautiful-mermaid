@@ -77,9 +77,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
         run: |
-          if [ -x "./.github/scripts/niuma-test-gate.sh" ]; then
+          if [ -f "./.github/scripts/niuma-test-gate.sh" ]; then
             echo "检测到自定义门禁脚本，执行..."
-            ./.github/scripts/niuma-test-gate.sh "$PR_NUMBER"
+            sh ./.github/scripts/niuma-test-gate.sh "$PR_NUMBER"
           else
             echo "无自定义门禁脚本，检查 GitHub PR status checks..."
             # 等待 checks 完成（最多等 5 分钟）

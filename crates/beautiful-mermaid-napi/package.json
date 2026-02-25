@@ -8,7 +8,7 @@
     ".": "./index.js"
   },
   "scripts": {
-    "build": "napi build --release"
+    "build": "napi build --release --manifest-path Cargo.toml"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4"
