@@ -1,9 +1,7 @@
 [workspace]
-members = [
-    "crates/beautiful-mermaid-rs",
-    "crates/beautiful-mermaid-napi",
-]
-default-members = [
-    "crates/beautiful-mermaid-rs",
-]
 resolver = "2"
+members = [
+  "crates/beautiful-mermaid-napi",
+  "crates/beautiful-mermaid-rs",
+]
+default-members = ["crates/beautiful-mermaid-napi"]

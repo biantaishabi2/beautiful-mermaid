@@ -1,37 +1,140 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-PR_NUMBER="${1:-}"
-if [ -n "$PR_NUMBER" ]; then
-  echo "Running niuma test gate for PR #$PR_NUMBER"
+log() {
+  echo "[gate] $*"
+}
+
+usage() {
+  echo "usage: $0 <pr-number>" >&2
+}
+
+if [[ $# -ne 1 ]]; then
+  usage
+  exit 2
 fi
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
-cd "$REPO_ROOT"
-
-# 先校验可用的 Cargo.toml，避免 N-API 构建阶段的 metadata 失败。
-if [ -f "$REPO_ROOT/Cargo.toml" ]; then
-  cargo metadata --format-version 1 --manifest-path "$REPO_ROOT/Cargo.toml" >/dev/null
-elif [ -f "$REPO_ROOT/crates/beautiful-mermaid-rs/Cargo.toml" ]; then
-  cargo metadata --format-version 1 --manifest-path "$REPO_ROOT/crates/beautiful-mermaid-rs/Cargo.toml" >/dev/null
+PR_NUMBER="$1"
+if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+  echo "invalid pr-number: $PR_NUMBER" >&2
+  usage
+  exit 2
 fi
 
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo "GITHUB_TOKEN is required" >&2
+  exit 2
+fi
+
+export PATH="$HOME/.bun/bin:$PATH"
+
+HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName --jq '.baseRefName')
+HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
+BASE_SHA=$(gh pr view "$PR_NUMBER" --json baseRefOid --jq '.baseRefOid')
+
+if [[ -z "$HEAD_REF" || "$HEAD_REF" == "null" ]]; then
+  echo "unable to resolve PR head ref for #$PR_NUMBER" >&2
+  exit 1
+fi
+if [[ -z "$BASE_REF" || "$BASE_REF" == "null" ]]; then
+  echo "unable to resolve PR base ref for #$PR_NUMBER" >&2
+  exit 1
+fi
+
+if [[ -z "$HEAD_SHA" || "$HEAD_SHA" == "null" ]]; then
+  HEAD_SHA="unknown"
+fi
+if [[ -z "$BASE_SHA" || "$BASE_SHA" == "null" ]]; then
+  BASE_SHA="unknown"
+fi
+
+WORK_BRANCH="niuma-gate-$PR_NUMBER"
+MERGE_REF_SOURCE=""
+MERGE_SHA=""
+
+log "baseline=merge-result"
+
+if git fetch origin "pull/${PR_NUMBER}/merge"; then
+  MERGE_SHA=$(git rev-parse FETCH_HEAD)
+  git checkout -B "$WORK_BRANCH" "$MERGE_SHA"
+  MERGE_REF_SOURCE="github-merge-ref"
+else
+  log "merge ref unavailable, fallback to local merge"
+
+  git fetch origin "$BASE_REF"
+  git fetch origin "$HEAD_REF"
+  git checkout -B "$WORK_BRANCH" "origin/$BASE_REF"
+
+  set +e
+  MERGE_OUTPUT=$(git -c user.name='niuma-gate' -c user.email='niuma-gate@local' merge --no-ff --no-edit "origin/$HEAD_REF" 2>&1)
+  MERGE_STATUS=$?
+  set -e
+
+  if [[ $MERGE_STATUS -ne 0 ]]; then
+    CONFLICT_FILES=$(git diff --name-only --diff-filter=U || true)
+    echo "CONFLICT: failed to merge origin/$HEAD_REF into origin/$BASE_REF" >&2
+    if [[ -n "$CONFLICT_FILES" ]]; then
+      echo "CONFLICT: files:" >&2
+      while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        echo "CONFLICT: $file" >&2
+      done <<< "$CONFLICT_FILES"
+    fi
+
+    MERGE_SUMMARY=$(printf '%s\n' "$MERGE_OUTPUT" | grep -E 'CONFLICT|Automatic merge failed|^error:' | head -n 20 || true)
+    if [[ -z "$MERGE_SUMMARY" ]]; then
+      MERGE_SUMMARY=$(printf '%s\n' "$MERGE_OUTPUT" | tail -n 20)
+    fi
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      echo "CONFLICT: $line" >&2
+    done <<< "$MERGE_SUMMARY"
+
+    git merge --abort >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  MERGE_SHA=$(git rev-parse HEAD)
+  MERGE_REF_SOURCE="local-merge"
+fi
+
+log "merge_ref_source=$MERGE_REF_SOURCE"
+log "base_sha=$BASE_SHA"
+log "head_sha=$HEAD_SHA"
+if [[ -n "$MERGE_SHA" ]]; then
+  log "merge_sha=$MERGE_SHA"
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required on runner (PATH=$PATH)" >&2
+  exit 1
+fi
+
+if [[ -f "crates/beautiful-mermaid-napi/package.json" ]]; then
+  log "building N-API package"
+  (
+    cd crates/beautiful-mermaid-napi
+    npm install
+    npx napi build --release
+  )
+fi
+
+log "running rust tests"
 rust_test_log="$(mktemp)"
 rust_test_bin=""
 cleanup() {
   rm -f "$rust_test_log"
-  if [ -n "$rust_test_bin" ]; then
+  if [[ -n "$rust_test_bin" ]]; then
     rm -f "$rust_test_bin"
   fi
 }
 trap cleanup EXIT
-if cargo test --offline --manifest-path crates/beautiful-mermaid-rs/Cargo.toml >"$rust_test_log" 2>&1; then
+if cargo test --manifest-path crates/beautiful-mermaid-rs/Cargo.toml >"$rust_test_log" 2>&1; then
   cat "$rust_test_log"
 else
   cat "$rust_test_log"
   if grep -q "Invalid cross-device link" "$rust_test_log"; then
-    # 当前执行环境的 rustc 会触发 EXDEV，回退到 rustc --test 保持功能验证可执行。
     rust_test_bin="$(mktemp /tmp/stadium-tests-XXXXXX)"
     rustc --edition=2021 --test crates/beautiful-mermaid-rs/src/ascii/shapes/stadium.rs -o "$rust_test_bin"
     chmod +x "$rust_test_bin"
@@ -41,4 +144,11 @@ else
   fi
 fi
 
-bun test src/__tests__/ascii.test.ts
+log "running bun tests"
+bun install --frozen-lockfile
+bun test
+
+log "running typecheck"
+bun x tsc --noEmit
+
+log "all required checks passed"

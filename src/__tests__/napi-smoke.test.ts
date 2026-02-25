@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test'
-import { echoBuffer } from '../../crates/beautiful-mermaid-napi/index.js'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const { echoBuffer } = require('../../crates/beautiful-mermaid-napi/index.js') as {
+  echoBuffer(input: Uint8Array): Uint8Array
+}
 
 describe('napi smoke', () => {
   it('echoBuffer returns same data', () => {

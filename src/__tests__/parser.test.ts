@@ -160,6 +160,12 @@ describe('parseMermaid – node shapes (Batch 2)', () => {
     expect(g.nodes.get('A')!.shape).toBe('trapezoid-alt')
     expect(g.nodes.get('A')!.label).toBe('Alt Trapezoid')
   })
+
+  it('ignores numeric-leading flowchart node IDs to avoid integer-like map keys', () => {
+    const g = parseMermaid('graph TD\n  1[One]')
+    expect(g.nodes.size).toBe(0)
+    expect(g.edges).toHaveLength(0)
+  })
 })
 
 // ============================================================================
@@ -638,6 +644,15 @@ describe('parseMermaid – state diagrams', () => {
     expect(g.edges[1]!.target).toBe('Done')
     // State nodes default to rounded shape
     expect(g.nodes.get('Idle')!.shape).toBe('rounded')
+  })
+
+  it('ignores numeric-leading state IDs to avoid integer-like map keys', () => {
+    const g = parseMermaid(`stateDiagram-v2
+      1 --> 2
+      state "Numeric Alias" as 3state
+      4state : Invalid`)
+    expect(g.nodes.size).toBe(0)
+    expect(g.edges).toHaveLength(0)
   })
 
   it('parses transition labels', () => {
