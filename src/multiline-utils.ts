@@ -12,6 +12,7 @@ import { LINE_HEIGHT_RATIO } from './text-metrics.ts'
 const require = createRequire(import.meta.url)
 
 interface MultilineRustAddon {
+  __nativeLoaded: boolean
   normalizeBrTags(label: string): string
   stripFormattingTags(text: string): string
   escapeXml(text: string): string
@@ -50,6 +51,7 @@ function loadRustAddon(): MultilineRustAddon | null {
   try {
     const addon = require('../crates/beautiful-mermaid-napi/index.js') as Partial<MultilineRustAddon>
     if (
+      addon.__nativeLoaded === true &&
       typeof addon.normalizeBrTags === 'function' &&
       typeof addon.stripFormattingTags === 'function' &&
       typeof addon.escapeXml === 'function' &&
