@@ -17,6 +17,25 @@ import { measureMultilineText, LINE_HEIGHT_RATIO, measureTextWidth } from '../te
 import { renderMermaid } from '../index.ts'
 import { normalizeBrTags, stripFormattingTags } from '../multiline-utils.ts'
 
+async function withRustFlag<T>(flag: string | undefined, fn: () => Promise<T> | T): Promise<T> {
+  const prev = process.env.BEAUTIFUL_MERMAID_USE_RUST
+  if (flag === undefined) {
+    delete process.env.BEAUTIFUL_MERMAID_USE_RUST
+  } else {
+    process.env.BEAUTIFUL_MERMAID_USE_RUST = flag
+  }
+
+  try {
+    return await fn()
+  } finally {
+    if (prev === undefined) {
+      delete process.env.BEAUTIFUL_MERMAID_USE_RUST
+    } else {
+      process.env.BEAUTIFUL_MERMAID_USE_RUST = prev
+    }
+  }
+}
+
 // ============================================================================
 // Parser: <br> tag normalization
 // ============================================================================
@@ -827,6 +846,35 @@ describe('renderMermaid – markdown formatting in labels', () => {
     const svg = await renderMermaid('graph TD\n  A -->|**important**| B')
     expect(svg).toContain('font-weight="bold"')
     expect(svg).toContain('>important</tspan>')
+  })
+})
+
+describe('renderMermaid – rust multiline flag parity', () => {
+  const parityCases: Array<{ name: string; source: string }> = [
+    {
+      name: 'flowchart multiline + markdown',
+      source: 'graph TD\n  A[Line1<br>**Line2**]',
+    },
+    {
+      name: 'edge multiline label',
+      source: 'graph TD\n  A -->|first<br>second| B',
+    },
+    {
+      name: 'sequence multiline label',
+      source: 'sequenceDiagram\nA->>B: Hello<br>World',
+    },
+    {
+      name: 'class multiline relationship',
+      source: 'classDiagram\nA --> B : uses<br>data',
+    },
+  ]
+
+  parityCases.forEach(({ name, source }) => {
+    it(`keeps svg identical under rust flag: ${name}`, async () => {
+      const tsSvg = await withRustFlag(undefined, () => renderMermaid(source))
+      const rustSvg = await withRustFlag('1', () => renderMermaid(source))
+      expect(rustSvg).toBe(tsSvg)
+    })
   })
 })
 
