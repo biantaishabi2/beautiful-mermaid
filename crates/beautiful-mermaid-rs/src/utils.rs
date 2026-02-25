@@ -269,8 +269,8 @@ fn replace_markdown_pair(input: &str, marker: &str, open_tag: &str, close_tag: &
 
         let first_char = next_char(input, content_start);
         let search_from = content_start + first_char.len_utf8();
-        let newline_limit = input[content_start..].find('\n').map(|offset| content_start + offset);
-        let search_limit = newline_limit.unwrap_or(input.len());
+        let line_break_limit = find_first_line_terminator(input, content_start);
+        let search_limit = line_break_limit.unwrap_or(input.len());
 
         if search_from > search_limit {
             output.push_str(&input[cursor..start + 1]);
@@ -343,6 +343,13 @@ fn replace_markdown_italic(input: &str) -> String {
 
     output.push_str(&input[cursor..]);
     output
+}
+
+fn find_first_line_terminator(input: &str, from: usize) -> Option<usize> {
+    input[from..]
+        .char_indices()
+        .find(|(_, ch)| matches!(ch, '\n' | '\r' | '\u{2028}' | '\u{2029}'))
+        .map(|(offset, _)| from + offset)
 }
 
 fn is_valid_italic_inner(inner: &str) -> bool {
@@ -502,6 +509,14 @@ mod tests {
         assert_eq!(
             normalize_br_tags("**a<br>b** and ~~x<br>y~~"),
             "**a\nb** and ~~x\ny~~"
+        );
+        assert_eq!(
+            normalize_br_tags("**a\rb** and ~~x\ry~~"),
+            "**a\rb** and ~~x\ry~~"
+        );
+        assert_eq!(
+            normalize_br_tags("**a\u{2028}b** and ~~x\u{2029}y~~"),
+            "**a\u{2028}b** and ~~x\u{2029}y~~"
         );
         assert_eq!(normalize_br_tags("*****"), "<b>*</b>");
         assert_eq!(normalize_br_tags("*a* 与 * a *"), "<i>a</i> 与 * a *");
