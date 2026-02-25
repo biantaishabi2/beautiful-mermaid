@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import type { MermaidGraph, PositionedGraph, TypesContractPayload } from '../types.ts'
 import {
   fromMermaidGraphContract,
+  fromPositionedGraphContract,
   normalizeMermaidGraphWithRustFallback,
   normalizePositionedGraphWithRustFallback,
   toMermaidGraphContract,
@@ -131,6 +132,7 @@ describe('types rust compat', () => {
     const graph = makeGraph()
     const contract = toMermaidGraphContract(graph)
     expect(Object.keys(contract.nodes)).toEqual(['n1', 'n2', 'n3'])
+    expect(contract.nodesOrder).toEqual(['n1', 'n2', 'n3'])
 
     const roundtrip = fromMermaidGraphContract(contract)
     expect(Array.from(roundtrip.nodes.keys())).toEqual(['n1', 'n2', 'n3'])
@@ -242,6 +244,33 @@ describe('types rust compat', () => {
     expect(result.graph).toEqual(positioned)
   })
 
+  it('falls back to ts when positionedGraph nested node fields are invalid', () => {
+    const positioned = makePositionedGraph()
+
+    const result = normalizePositionedGraphWithRustFallback(positioned, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          return {
+            positionedGraph: {
+              ...payload.positionedGraph!,
+              nodes: [
+                {
+                  ...payload.positionedGraph!.nodes[0],
+                  shape: 'not-a-shape',
+                },
+              ],
+            },
+          }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+    expect(result.graph).toEqual(positioned)
+  })
+
   it('falls back to ts when positionedGraph nested group fields are invalid', () => {
     const positioned = makePositionedGraph()
     const result = normalizePositionedGraphWithRustFallback(positioned, {
@@ -280,7 +309,59 @@ describe('types rust compat', () => {
     expect(result.graph).toEqual(positioned)
   })
 
-  it('falls back to ts when map keys are integer-like and may reorder', () => {
+  it('keeps integer-like map key order through rust normalization', () => {
+    const graph: MermaidGraph = {
+      ...makeGraph(),
+      nodes: new Map([
+        ['2', { id: '2', label: 'Node 2', shape: 'rectangle' }],
+        ['10', { id: '10', label: 'Node 10', shape: 'rectangle' }],
+        ['1', { id: '1', label: 'Node 1', shape: 'rectangle' }],
+      ]),
+      classAssignments: new Map([
+        ['2', 'primary'],
+        ['10', 'primary'],
+        ['1', 'primary'],
+      ]),
+      classDefs: new Map([
+        ['2', { fill: '#111' }],
+        ['10', { fill: '#222' }],
+        ['1', { fill: '#333' }],
+      ]),
+      nodeStyles: new Map([
+        ['2', { fill: '#f0f0f0' }],
+        ['10', { fill: '#f0f0f0' }],
+        ['1', { fill: '#f0f0f0' }],
+      ]),
+    }
+
+    const contract = toMermaidGraphContract(graph)
+    // JS 对整数样式 key 的对象枚举会重排；顺序元数据必须保留原始 Map 顺序。
+    expect(Object.keys(contract.nodes)).toEqual(['1', '2', '10'])
+    expect(contract.nodesOrder).toEqual(['2', '10', '1'])
+    expect(contract.classDefsOrder).toEqual(['2', '10', '1'])
+    expect(contract.classAssignmentsOrder).toEqual(['2', '10', '1'])
+    expect(contract.nodeStylesOrder).toEqual(['2', '10', '1'])
+
+    const roundtrip = fromMermaidGraphContract(contract)
+    expect(Array.from(roundtrip.nodes.keys())).toEqual(['2', '10', '1'])
+    expect(Array.from(roundtrip.classDefs.keys())).toEqual(['2', '10', '1'])
+    expect(Array.from(roundtrip.classAssignments.keys())).toEqual(['2', '10', '1'])
+    expect(Array.from(roundtrip.nodeStyles.keys())).toEqual(['2', '10', '1'])
+
+    const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          return payload
+        },
+      },
+    })
+
+    expect(result.engine).toBe('rust')
+    expect(Array.from(result.graph.nodes.keys())).toEqual(['2', '10', '1'])
+  })
+
+  it('falls back to ts when rust response drops integer-key order metadata', () => {
     const graph: MermaidGraph = {
       ...makeGraph(),
       nodes: new Map([
@@ -304,13 +385,20 @@ describe('types rust compat', () => {
       useRust: true,
       runtime: {
         normalizeContracts(payload: TypesContractPayload): unknown {
-          return payload
+          const mermaidGraph = payload.mermaidGraph!
+          const {
+            nodesOrder: _nodesOrder,
+            classAssignmentsOrder: _classAssignmentsOrder,
+            nodeStylesOrder: _nodeStylesOrder,
+            ...rest
+          } = mermaidGraph
+          return { mermaidGraph: rest }
         },
       },
     })
 
     expect(result.engine).toBe('ts')
-    expect(result.fallbackReason).toContain('整数样式')
+    expect(result.fallbackReason).toContain('契约校验失败')
     expect(Array.from(result.graph.nodes.keys())).toEqual(['2', '10', '1'])
   })
 
@@ -344,6 +432,34 @@ describe('types rust compat', () => {
     expect(result.fallbackReason).toContain('深度超过限制')
   })
 
+  it('falls back to ts when rust response contains subgraph depth overflow', () => {
+    const graph = makeGraph()
+    const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          const mermaidGraph = payload.mermaidGraph!
+          const root = { id: 'root', label: 'root', nodeIds: ['n1'], children: [] as MermaidGraph['subgraphs'] }
+          let current = root
+          for (let i = 1; i <= 257; i++) {
+            const child = {
+              id: `sg-over-${i}`,
+              label: `sg-over-${i}`,
+              nodeIds: ['n1'],
+              children: [] as MermaidGraph['subgraphs'],
+            }
+            current.children.push(child)
+            current = child
+          }
+          return { mermaidGraph: { ...mermaidGraph, subgraphs: [root] } }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+  })
+
   it('accepts nested groups at depth boundary', () => {
     const positioned = makeDeepGroupPositionedGraph(256)
     const result = normalizePositionedGraphWithRustFallback(positioned, {
@@ -372,5 +488,63 @@ describe('types rust compat', () => {
 
     expect(result.engine).toBe('ts')
     expect(result.fallbackReason).toContain('深度超过限制')
+  })
+
+  it('falls back to ts when rust response contains group depth overflow', () => {
+    const positioned = makePositionedGraph()
+    const result = normalizePositionedGraphWithRustFallback(positioned, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          const positionedGraph = payload.positionedGraph!
+          const root = {
+            id: 'g-root-over',
+            label: 'g-root-over',
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 120,
+            children: [] as PositionedGraph['groups'],
+          }
+          let current = root
+          for (let i = 1; i <= 257; i++) {
+            const child = {
+              id: `g-over-${i}`,
+              label: `g-over-${i}`,
+              x: i,
+              y: i,
+              width: 200 - i,
+              height: 120 - i,
+              children: [] as PositionedGraph['groups'],
+            }
+            current.children.push(child)
+            current = child
+          }
+          return { positionedGraph: { ...positionedGraph, groups: [root] } }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+  })
+
+  it('throws clear error when directly deserializing invalid positioned contract', () => {
+    const contract = toPositionedGraphContract(makePositionedGraph())
+    const invalidContract = {
+      ...contract,
+      edges: [
+        {
+          ...contract.edges[0],
+          points: [{ x: 1, y: 1 }, { bad: true }],
+        },
+      ],
+    }
+
+    expect(() =>
+      fromPositionedGraphContract(
+        invalidContract as unknown as ReturnType<typeof toPositionedGraphContract>
+      )
+    ).toThrow('PositionedGraph 契约不合法')
   })
 })

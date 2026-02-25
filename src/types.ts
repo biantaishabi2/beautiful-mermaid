@@ -164,11 +164,19 @@ export interface RenderOptions {
 export interface MermaidGraphContract {
   direction: Direction
   nodes: Record<string, MermaidNode>
+  /** 保留 Map 原始插入顺序（用于整数样式 key 防止在 JS 对象中重排） */
+  nodesOrder?: string[]
   edges: MermaidEdge[]
   subgraphs: MermaidSubgraph[]
   classDefs: Record<string, Record<string, string>>
+  /** 保留 classDefs 的插入顺序 */
+  classDefsOrder?: string[]
   classAssignments: Record<string, string>
+  /** 保留 classAssignments 的插入顺序 */
+  classAssignmentsOrder?: string[]
   nodeStyles: Record<string, Record<string, string>>
+  /** 保留 nodeStyles 的插入顺序 */
+  nodeStylesOrder?: string[]
 }
 
 export interface PositionedGraphContract {
@@ -280,9 +288,21 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+function isArrayOf(value: unknown, predicate: (item: unknown) => boolean): boolean {
+  if (!Array.isArray(value)) return false
+  for (const item of value) {
+    if (!predicate(item)) return false
+  }
+  return true
+}
+
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!isPlainObject(value)) return false
   return Object.values(value).every(entry => typeof entry === 'string')
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return isArrayOf(value, entry => typeof entry === 'string')
 }
 
 function isIntegerLikeKey(key: string): boolean {
@@ -293,12 +313,13 @@ function hasIntegerLikeRecordKey(record: Record<string, unknown>): boolean {
   return Object.keys(record).some(isIntegerLikeKey)
 }
 
+function mapKeyOrder<V>(map: Map<string, V>): string[] {
+  return Array.from(map.keys())
+}
+
 function mapToRecord<V>(map: Map<string, V>): Record<string, V> {
   const record: Record<string, V> = {}
   for (const [key, value] of map.entries()) {
-    if (isIntegerLikeKey(key)) {
-      throw new Error(`Map key "${key}" 为整数样式，无法保证 Record 序列化顺序稳定`)
-    }
     record[key] = value
   }
   return record
@@ -308,8 +329,33 @@ function recordEntries<V>(record: Record<string, V>): Array<[string, V]> {
   return Object.entries(record) as Array<[string, V]>
 }
 
-function recordToMap<V>(record: Record<string, V>): Map<string, V> {
-  return new Map(recordEntries(record))
+function validateRecordOrder(record: Record<string, unknown>, order: unknown): order is string[] {
+  if (order === undefined) {
+    return !hasIntegerLikeRecordKey(record)
+  }
+  if (!isStringArray(order)) return false
+  if (new Set(order).size !== order.length) return false
+  const keys = Object.keys(record)
+  if (order.length !== keys.length) return false
+  const keySet = new Set(keys)
+  return order.every(key => keySet.has(key))
+}
+
+function recordToMap<V>(record: Record<string, V>, order: string[] | undefined, fieldName: string): Map<string, V> {
+  if (!validateRecordOrder(record, order)) {
+    throw new Error(`${fieldName} 顺序元数据不合法，无法安全恢复 Map 顺序`)
+  }
+  if (order === undefined) {
+    return new Map(recordEntries(record))
+  }
+  const entries: Array<[string, V]> = []
+  for (const key of order) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      throw new Error(`${fieldName} 顺序元数据引用了不存在的 key: "${key}"`)
+    }
+    entries.push([key, record[key]!])
+  }
+  return new Map(entries)
 }
 
 function cloneMermaidSubgraphTree(root: MermaidSubgraph): MermaidSubgraph {
@@ -355,9 +401,16 @@ function fromMermaidSubgraphContract(subgraph: MermaidSubgraph): MermaidSubgraph
 }
 
 export function toMermaidGraphContract(graph: MermaidGraph): MermaidGraphContract {
+  const classDefs = new Map(
+    Array.from(graph.classDefs.entries()).map(([name, styles]) => [name, { ...styles }])
+  )
+  const nodeStyles = new Map(
+    Array.from(graph.nodeStyles.entries()).map(([id, styles]) => [id, { ...styles }])
+  )
   return {
     direction: graph.direction,
     nodes: mapToRecord(graph.nodes),
+    nodesOrder: mapKeyOrder(graph.nodes),
     edges: graph.edges.map(edge => {
       const next: MermaidEdge = {
         source: edge.source,
@@ -372,24 +425,20 @@ export function toMermaidGraphContract(graph: MermaidGraph): MermaidGraphContrac
       return next
     }),
     subgraphs: graph.subgraphs.map(toMermaidSubgraphContract),
-    classDefs: mapToRecord(
-      new Map(
-        Array.from(graph.classDefs.entries()).map(([name, styles]) => [name, { ...styles }])
-      )
-    ),
+    classDefs: mapToRecord(classDefs),
+    classDefsOrder: mapKeyOrder(classDefs),
     classAssignments: mapToRecord(graph.classAssignments),
-    nodeStyles: mapToRecord(
-      new Map(
-        Array.from(graph.nodeStyles.entries()).map(([id, styles]) => [id, { ...styles }])
-      )
-    ),
+    classAssignmentsOrder: mapKeyOrder(graph.classAssignments),
+    nodeStyles: mapToRecord(nodeStyles),
+    nodeStylesOrder: mapKeyOrder(nodeStyles),
   }
 }
 
 export function fromMermaidGraphContract(contract: MermaidGraphContract): MermaidGraph {
+  assertMermaidGraphContract(contract)
   return {
     direction: contract.direction,
-    nodes: recordToMap(contract.nodes),
+    nodes: recordToMap(contract.nodes, contract.nodesOrder, 'nodes'),
     edges: contract.edges.map(edge => {
       const next: MermaidEdge = {
         source: edge.source,
@@ -405,11 +454,13 @@ export function fromMermaidGraphContract(contract: MermaidGraphContract): Mermai
     }),
     subgraphs: contract.subgraphs.map(fromMermaidSubgraphContract),
     classDefs: new Map(
-      recordEntries(contract.classDefs).map(([name, styles]) => [name, { ...styles }])
+      Array.from(recordToMap(contract.classDefs, contract.classDefsOrder, 'classDefs').entries())
+        .map(([name, styles]) => [name, { ...styles }])
     ),
-    classAssignments: recordToMap(contract.classAssignments),
+    classAssignments: recordToMap(contract.classAssignments, contract.classAssignmentsOrder, 'classAssignments'),
     nodeStyles: new Map(
-      recordEntries(contract.nodeStyles).map(([id, styles]) => [id, { ...styles }])
+      Array.from(recordToMap(contract.nodeStyles, contract.nodeStylesOrder, 'nodeStyles').entries())
+        .map(([id, styles]) => [id, { ...styles }])
     ),
   }
 }
@@ -531,6 +582,7 @@ export function toPositionedGraphContract(graph: PositionedGraph): PositionedGra
 }
 
 export function fromPositionedGraphContract(contract: PositionedGraphContract): PositionedGraph {
+  assertPositionedGraphContract(contract)
   return {
     width: contract.width,
     height: contract.height,
@@ -608,7 +660,7 @@ function isMermaidSubgraphContract(value: unknown): value is MermaidSubgraph {
     if (depth > MAX_SUBGRAPH_CONTRACT_DEPTH) return false
     if (typeof subgraph.id !== 'string') return false
     if (typeof subgraph.label !== 'string') return false
-    if (!Array.isArray(subgraph.nodeIds) || !subgraph.nodeIds.every(id => typeof id === 'string')) return false
+    if (!isStringArray(subgraph.nodeIds)) return false
     if (!Array.isArray(subgraph.children)) return false
     if (subgraph.direction !== undefined && !isDirection(subgraph.direction)) return false
     for (const child of subgraph.children) {
@@ -622,13 +674,11 @@ function isMermaidSubgraphContract(value: unknown): value is MermaidSubgraph {
 
 function isRecordOfMermaidNodes(value: unknown): value is Record<string, MermaidNode> {
   if (!isPlainObject(value)) return false
-  if (hasIntegerLikeRecordKey(value)) return false
   return Object.values(value).every(entry => isMermaidNodeContract(entry))
 }
 
 function isRecordOfStringRecords(value: unknown): value is Record<string, Record<string, string>> {
   if (!isPlainObject(value)) return false
-  if (hasIntegerLikeRecordKey(value)) return false
   return Object.values(value).every(entry => isStringRecord(entry))
 }
 
@@ -652,7 +702,7 @@ function isPositionedEdgeContract(value: unknown): value is PositionedEdgeContra
   if (!isEdgeStyle(value.style)) return false
   if (typeof value.hasArrowStart !== 'boolean') return false
   if (typeof value.hasArrowEnd !== 'boolean') return false
-  if (!Array.isArray(value.points) || !value.points.every(point => isPointContract(point))) return false
+  if (!isArrayOf(value.points, point => isPointContract(point))) return false
   if (value.label !== undefined && typeof value.label !== 'string') return false
   if (value.labelPosition !== undefined && !isPointContract(value.labelPosition)) return false
   return true
@@ -681,18 +731,19 @@ function isPositionedGroupContract(value: unknown): value is PositionedGroupCont
 
 function isMermaidGraphContract(value: unknown): value is MermaidGraphContract {
   if (!isPlainObject(value)) return false
-  return (
-    isDirection(value.direction) &&
-    isRecordOfMermaidNodes(value.nodes) &&
-    Array.isArray(value.edges) &&
-    value.edges.every(edge => isMermaidEdgeContract(edge)) &&
-    Array.isArray(value.subgraphs) &&
-    value.subgraphs.every(subgraph => isMermaidSubgraphContract(subgraph)) &&
-    isRecordOfStringRecords(value.classDefs) &&
-    isStringRecord(value.classAssignments) &&
-    !hasIntegerLikeRecordKey(value.classAssignments) &&
-    isRecordOfStringRecords(value.nodeStyles)
-  )
+  if (!isRecordOfMermaidNodes(value.nodes)) return false
+  if (!isArrayOf(value.edges, edge => isMermaidEdgeContract(edge))) return false
+  if (!isArrayOf(value.subgraphs, subgraph => isMermaidSubgraphContract(subgraph))) return false
+  if (!isRecordOfStringRecords(value.classDefs)) return false
+  if (!isStringRecord(value.classAssignments)) return false
+  if (!isRecordOfStringRecords(value.nodeStyles)) return false
+
+  if (!validateRecordOrder(value.nodes, value.nodesOrder)) return false
+  if (!validateRecordOrder(value.classDefs, value.classDefsOrder)) return false
+  if (!validateRecordOrder(value.classAssignments, value.classAssignmentsOrder)) return false
+  if (!validateRecordOrder(value.nodeStyles, value.nodeStylesOrder)) return false
+
+  return true
 }
 
 function isPositionedGraphContract(value: unknown): value is PositionedGraphContract {
@@ -700,12 +751,9 @@ function isPositionedGraphContract(value: unknown): value is PositionedGraphCont
   return (
     isFiniteNumber(value.width) &&
     isFiniteNumber(value.height) &&
-    Array.isArray(value.nodes) &&
-    value.nodes.every(node => isPositionedNodeContract(node)) &&
-    Array.isArray(value.edges) &&
-    value.edges.every(edge => isPositionedEdgeContract(edge)) &&
-    Array.isArray(value.groups) &&
-    value.groups.every(group => isPositionedGroupContract(group))
+    isArrayOf(value.nodes, node => isPositionedNodeContract(node)) &&
+    isArrayOf(value.edges, edge => isPositionedEdgeContract(edge)) &&
+    isArrayOf(value.groups, group => isPositionedGroupContract(group))
   )
 }
 
@@ -732,6 +780,18 @@ function isRustEnabled(useRust?: boolean): boolean {
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+function assertMermaidGraphContract(value: unknown): asserts value is MermaidGraphContract {
+  if (!isMermaidGraphContract(value)) {
+    throw new TypeError('MermaidGraph 契约不合法')
+  }
+}
+
+function assertPositionedGraphContract(value: unknown): asserts value is PositionedGraphContract {
+  if (!isPositionedGraphContract(value)) {
+    throw new TypeError('PositionedGraph 契约不合法')
+  }
 }
 
 export function resolveTypesContractPayload(
