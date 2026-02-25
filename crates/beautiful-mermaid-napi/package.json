@@ -1,0 +1,16 @@
+{
+  "name": "beautiful-mermaid-napi",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "build": "napi build --release"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
+  }
+}
