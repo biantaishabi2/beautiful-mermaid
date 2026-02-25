@@ -265,18 +265,23 @@ mod tests {
         };
         let dimensions = get_dimensions("AB", options);
         let base = DrawingCoord { x: 10, y: 20 };
+        let directions = [
+            Direction::Up,
+            Direction::Down,
+            Direction::Left,
+            Direction::Right,
+            Direction::UpperLeft,
+            Direction::UpperRight,
+            Direction::LowerLeft,
+            Direction::LowerRight,
+            Direction::Middle,
+        ];
 
-        assert_eq!(
-            get_attachment_point(Direction::Up, &dimensions, base),
-            DrawingCoord { x: 13, y: 20 }
-        );
-        assert_eq!(
-            get_attachment_point(Direction::Right, &dimensions, base),
-            DrawingCoord { x: 15, y: 21 }
-        );
-        assert_eq!(
-            get_attachment_point(Direction::Middle, &dimensions, base),
-            DrawingCoord { x: 13, y: 21 }
-        );
+        for dir in directions {
+            assert_eq!(
+                get_attachment_point(dir, &dimensions, base),
+                rectangle::get_box_attachment_point(dir, &dimensions, base)
+            );
+        }
     }
 }
