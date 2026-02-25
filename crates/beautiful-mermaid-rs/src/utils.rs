@@ -255,7 +255,7 @@ fn replace_markdown_pair(input: &str, marker: &str, open_tag: &str, close_tag: &
     let mut output = String::with_capacity(input.len());
     let mut cursor = 0;
 
-    loop {
+    while cursor < input.len() {
         let Some(rel_start) = input[cursor..].find(marker) else {
             output.push_str(&input[cursor..]);
             break;
@@ -267,18 +267,28 @@ fn replace_markdown_pair(input: &str, marker: &str, open_tag: &str, close_tag: &
             break;
         }
 
-        let search_from = content_start + 1;
-        let Some(rel_end) = input[search_from..].find(marker) else {
-            output.push_str(&input[cursor..]);
-            break;
-        };
-        let end = search_from + rel_end;
+        let first_char = next_char(input, content_start);
+        let search_from = content_start + first_char.len_utf8();
+        let newline_limit = input[content_start..].find('\n').map(|offset| content_start + offset);
+        let search_limit = newline_limit.unwrap_or(input.len());
 
-        output.push_str(&input[cursor..start]);
-        output.push_str(open_tag);
-        output.push_str(&input[content_start..end]);
-        output.push_str(close_tag);
-        cursor = end + marker.len();
+        if search_from > search_limit {
+            output.push_str(&input[cursor..start + 1]);
+            cursor = start + 1;
+            continue;
+        }
+
+        if let Some(rel_end) = input[search_from..search_limit].find(marker) {
+            let end = search_from + rel_end;
+            output.push_str(&input[cursor..start]);
+            output.push_str(open_tag);
+            output.push_str(&input[content_start..end]);
+            output.push_str(close_tag);
+            cursor = end + marker.len();
+        } else {
+            output.push_str(&input[cursor..start + 1]);
+            cursor = start + 1;
+        }
     }
 
     output
@@ -489,6 +499,10 @@ mod tests {
         assert_eq!(normalize_br_tags("a\\nb"), "a\nb");
         assert_eq!(normalize_br_tags("\""), "");
         assert_eq!(normalize_br_tags("**text**"), "<b>text</b>");
+        assert_eq!(
+            normalize_br_tags("**a<br>b** and ~~x<br>y~~"),
+            "**a\nb** and ~~x\ny~~"
+        );
         assert_eq!(normalize_br_tags("*****"), "<b>*</b>");
         assert_eq!(normalize_br_tags("*a* 与 * a *"), "<i>a</i> 与 * a *");
         assert_eq!(normalize_br_tags("~~text~~"), "<s>text</s>");

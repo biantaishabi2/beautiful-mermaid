@@ -109,6 +109,14 @@ describe('multiline utils rust parity', () => {
     expect(rust).toBe(ts)
   })
 
+  it('does not apply bold/strike across line breaks', () => {
+    const input = '**a<br>b** and ~~x<br>y~~'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('**a\nb** and ~~x\ny~~')
+    expect(rust).toBe(ts)
+  })
+
   it('matches overlapping markdown pair behavior for bold/strike', () => {
     const boldInput = '*****'
     const strikeInput = '~~~~~'
