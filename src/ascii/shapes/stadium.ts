@@ -12,6 +12,14 @@ import { splitLines } from '../multiline-utils.ts'
 import type { ShapeRenderer, ShapeDimensions, ShapeRenderOptions } from './types.ts'
 import { getBoxAttachmentPoint } from './rectangle.ts'
 
+function codePoints(line: string): string[] {
+  return Array.from(line)
+}
+
+function codePointWidth(line: string): number {
+  return codePoints(line).length
+}
+
 /**
  * Stadium (pill) shape renderer.
  *
@@ -30,7 +38,7 @@ import { getBoxAttachmentPoint } from './rectangle.ts'
 export const stadiumRenderer: ShapeRenderer = {
   getDimensions(label: string, options: ShapeRenderOptions): ShapeDimensions {
     const lines = splitLines(label)
-    const maxLineWidth = Math.max(...lines.map(l => l.length), 0)
+    const maxLineWidth = Math.max(...lines.map(l => codePointWidth(l)), 0)
     const lineCount = lines.length
 
     const innerWidth = 2 * options.padding + maxLineWidth
@@ -54,6 +62,8 @@ export const stadiumRenderer: ShapeRenderer = {
 
   render(label: string, dimensions: ShapeDimensions, options: ShapeRenderOptions): Canvas {
     const { width, height } = dimensions
+    const innerWidth = dimensions.gridColumns[1]
+    const innerHeight = dimensions.gridRows[1]
     const canvas = mkCanvas(width - 1, height - 1)
 
     const centerY = Math.floor(height / 2)
@@ -91,16 +101,18 @@ export const stadiumRenderer: ShapeRenderer = {
 
     // Center the label
     const lines = splitLines(label)
-    const startY = centerY - Math.floor((lines.length - 1) / 2)
+    const startY = 1 + Math.floor((innerHeight - lines.length) / 2)
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!
-      const textX = Math.floor(width / 2) - Math.floor(line.length / 2)
-      for (let j = 0; j < line.length; j++) {
+      const chars = codePoints(line)
+      const textWidth = chars.length
+      const textX = 2 + Math.floor((innerWidth - textWidth) / 2)
+      for (let j = 0; j < chars.length; j++) {
         const x = textX + j
         const y = startY + i
         if (x > 0 && x < width - 1 && y >= 0 && y < height) {
-          canvas[x]![y] = line[j]!
+          canvas[x]![y] = chars[j]!
         }
       }
     }

@@ -120,6 +120,30 @@ if [[ -f "crates/beautiful-mermaid-napi/package.json" ]]; then
   )
 fi
 
+log "running rust tests"
+rust_test_log="$(mktemp)"
+rust_test_bin=""
+cleanup() {
+  rm -f "$rust_test_log"
+  if [[ -n "$rust_test_bin" ]]; then
+    rm -f "$rust_test_bin"
+  fi
+}
+trap cleanup EXIT
+if cargo test --manifest-path crates/beautiful-mermaid-rs/Cargo.toml >"$rust_test_log" 2>&1; then
+  cat "$rust_test_log"
+else
+  cat "$rust_test_log"
+  if grep -q "Invalid cross-device link" "$rust_test_log"; then
+    rust_test_bin="$(mktemp /tmp/stadium-tests-XXXXXX)"
+    rustc --edition=2021 --test crates/beautiful-mermaid-rs/src/ascii/shapes/stadium.rs -o "$rust_test_bin"
+    chmod +x "$rust_test_bin"
+    "$rust_test_bin"
+  else
+    exit 1
+  fi
+fi
+
 log "running bun tests"
 bun install --frozen-lockfile
 bun test
