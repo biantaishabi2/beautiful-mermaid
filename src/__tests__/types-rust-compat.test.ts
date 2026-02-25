@@ -423,6 +423,32 @@ describe('types rust compat', () => {
     expect(Array.from(result.graph.nodes.keys())).toEqual(['2', '10', '1'])
   })
 
+  it('falls back to ts when rust response drops classDefsOrder for integer-like keys', () => {
+    const graph: MermaidGraph = {
+      ...makeGraph(),
+      classDefs: new Map([
+        ['2', { fill: '#111' }],
+        ['10', { fill: '#222' }],
+        ['1', { fill: '#333' }],
+      ]),
+    }
+
+    const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          const mermaidGraph = payload.mermaidGraph!
+          const { classDefsOrder: _classDefsOrder, ...rest } = mermaidGraph
+          return { mermaidGraph: rest }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+    expect(Array.from(result.graph.classDefs.keys())).toEqual(['2', '10', '1'])
+  })
+
   it('accepts nested subgraphs at depth boundary', () => {
     const graph = makeDeepSubgraphGraph(256)
     const result = normalizeMermaidGraphWithRustFallback(graph, {
