@@ -155,6 +155,33 @@ describe('types rust compat', () => {
     expect(Array.from(result.graph.nodes.keys())).toEqual(['n1', 'n2', 'n3'])
   })
 
+  it('falls back to ts when mermaidGraph nested contract fields are invalid', () => {
+    const graph = makeGraph()
+    const result = normalizeMermaidGraphWithRustFallback(graph, {
+      useRust: true,
+      runtime: {
+        normalizeContracts(payload: TypesContractPayload): unknown {
+          const mermaidGraph = payload.mermaidGraph!
+          return {
+            mermaidGraph: {
+              ...mermaidGraph,
+              edges: [
+                {
+                  ...mermaidGraph.edges[0],
+                  hasArrowEnd: 'invalid-boolean',
+                },
+              ],
+            },
+          }
+        },
+      },
+    })
+
+    expect(result.engine).toBe('ts')
+    expect(result.fallbackReason).toContain('契约校验失败')
+    expect(Array.from(result.graph.nodes.keys())).toEqual(['n1', 'n2', 'n3'])
+  })
+
   it('falls back to ts when positionedGraph nested contract fields are invalid', () => {
     const positioned: PositionedGraph = {
       width: 200,

@@ -40,6 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.repo }}
+          token: ${{ secrets.NIUMA_PAT }}
           fetch-depth: 0
 
       - name: Setup niuma binary
@@ -63,7 +65,17 @@ jobs:
         run: |
           # 分页解析 BOT:PR_CREATED marker，取最新 open PR 号
           if PR_NUMBER=$("$NIUMA_BIN" resolve-pr --repo "$REPO" --issue "$ISSUE_NUMBER"); then
-            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            if pr_view_err="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number 2>&1 >/dev/null)"; then
+              echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            else
+              if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
+                echo "::warning::解析到 PR #$PR_NUMBER，但在 $REPO 中不存在，跳过 gate"
+                echo "pr_number=" >> "$GITHUB_OUTPUT"
+              else
+                echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err"
+                exit 1
+              fi
+            fi
           else
             echo "::warning::未在 issue #${ISSUE_NUMBER} 的评论中找到可用 PR 号"
             echo "pr_number=" >> $GITHUB_OUTPUT
@@ -76,15 +88,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+          REPO: ${{ inputs.repo }}
         run: |
-          if [ -x "./.github/scripts/niuma-test-gate.sh" ]; then
+          if [ -f "./.github/scripts/niuma-test-gate.sh" ]; then
             echo "检测到自定义门禁脚本，执行..."
-            ./.github/scripts/niuma-test-gate.sh "$PR_NUMBER"
+            bash ./.github/scripts/niuma-test-gate.sh "$PR_NUMBER" "$REPO"
           else
             echo "无自定义门禁脚本，检查 GitHub PR status checks..."
+            if ! pr_view_err="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json number 2>&1 >/dev/null)"; then
+              if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
+                echo "::warning::PR #$PR_NUMBER 在 $REPO 中不存在，跳过 gate"
+                exit 0
+              fi
+              echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err"
+              exit 1
+            fi
             # 等待 checks 完成（最多等 5 分钟）
             for i in $(seq 1 30); do
-              PENDING=$(gh pr checks "$PR_NUMBER" --json state --jq '[.[] | select(.state == "PENDING")] | length' 2>/dev/null || echo "0")
+              PENDING=$(gh pr checks "$PR_NUMBER" --repo "$REPO" --json state --jq '[.[] | select(.state == "PENDING")] | length' 2>/dev/null || echo "0")
               if [ "$PENDING" = "0" ]; then
                 break
               fi
@@ -92,10 +113,10 @@ jobs:
               sleep 10
             done
             # 检查是否全部通过（排除本 workflow 自身的 review job）
-            FAILED=$(gh pr checks "$PR_NUMBER" --json name,conclusion --jq '[.[] | select(.conclusion == "FAILURE" or .conclusion == "failure")] | length' 2>/dev/null || echo "0")
+            FAILED=$(gh pr checks "$PR_NUMBER" --repo "$REPO" --json name,conclusion --jq '[.[] | select(.conclusion == "FAILURE" or .conclusion == "failure")] | length' 2>/dev/null || echo "0")
             if [ "$FAILED" != "0" ]; then
               echo "::error::PR #$PR_NUMBER 有 $FAILED 个 check 失败"
-              gh pr checks "$PR_NUMBER" --json name,conclusion --jq '.[] | select(.conclusion == "FAILURE" or .conclusion == "failure") | "  ✗ \(.name)"'
+              gh pr checks "$PR_NUMBER" --repo "$REPO" --json name,conclusion --jq '.[] | select(.conclusion == "FAILURE" or .conclusion == "failure") | "  ✗ \(.name)"'
               exit 1
             fi
             echo "所有 PR checks 通过"
