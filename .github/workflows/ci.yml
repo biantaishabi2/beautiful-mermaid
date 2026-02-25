@@ -43,6 +43,7 @@ jobs:
       - name: Run tests (rust multiline flag path)
         env:
           BEAUTIFUL_MERMAID_USE_RUST: "1"
+          BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE: "1"
         run: bun test
 
       - name: Type check

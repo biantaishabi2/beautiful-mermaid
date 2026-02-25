@@ -11,6 +11,7 @@ import {
 const require = createRequire(import.meta.url)
 
 type RustAddon = {
+  __nativeLoaded: boolean
   normalizeBrTags(label: string): string
   stripFormattingTags(text: string): string
   escapeXml(text: string): string
@@ -60,6 +61,12 @@ function runTs<T>(fn: () => T): T {
 }
 
 describe('multiline utils rust parity', () => {
+  it('requires native addon when rust path is enforced', () => {
+    if (process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE === '1') {
+      expect(rustAddon.__nativeLoaded).toBe(true)
+    }
+  })
+
   it('normalizes br variants to newline', () => {
     const inputs = ['a<br>b', 'a<br/>b', 'a<br />b', 'a<BR>b']
     for (const input of inputs) {
@@ -75,6 +82,14 @@ describe('multiline utils rust parity', () => {
     const ts = runTs(() => normalizeBrTags(input))
     const rust = rustAddon.normalizeBrTags(input)
     expect(ts).toBe('a\nb')
+    expect(rust).toBe(ts)
+  })
+
+  it('strips surrounding quote for single quote char input', () => {
+    const input = '"'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('')
     expect(rust).toBe(ts)
   })
 

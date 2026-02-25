@@ -115,8 +115,12 @@ pub fn render_multiline_text_with_background(
 }
 
 fn strip_surrounding_quotes(input: &str) -> &str {
-    if input.starts_with('"') && input.ends_with('"') && input.len() >= 2 {
-        &input[1..input.len() - 1]
+    if input.starts_with('"') && input.ends_with('"') {
+        if input.len() <= 1 {
+            ""
+        } else {
+            &input[1..input.len() - 1]
+        }
     } else {
         input
     }
@@ -489,6 +493,7 @@ mod tests {
     fn normalize_br_tags_handles_markdown_and_html() {
         assert_eq!(normalize_br_tags("a<br>b"), "a\nb");
         assert_eq!(normalize_br_tags("a\\nb"), "a\nb");
+        assert_eq!(normalize_br_tags("\""), "");
         assert_eq!(normalize_br_tags("**text**"), "<b>text</b>");
         assert_eq!(normalize_br_tags("*a* 与 * a *"), "<i>a</i> 与 * a *");
         assert_eq!(normalize_br_tags("~~text~~"), "<s>text</s>");
