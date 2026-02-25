@@ -15,6 +15,7 @@ dependencies = [
 name = "beautiful-mermaid-napi"
 version = "0.0.0"
 dependencies = [
+ "beautiful-mermaid-rs",
  "napi",
  "napi-derive",
  "serde",

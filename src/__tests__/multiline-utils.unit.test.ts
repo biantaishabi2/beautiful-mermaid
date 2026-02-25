@@ -1,0 +1,251 @@
+import { describe, it, expect } from 'bun:test'
+import { createRequire } from 'node:module'
+import {
+  normalizeBrTags,
+  stripFormattingTags,
+  escapeXml,
+  renderMultilineText,
+  renderMultilineTextWithBackground,
+} from '../multiline-utils.ts'
+
+const require = createRequire(import.meta.url)
+
+type RustAddon = {
+  __nativeLoaded: boolean
+  normalizeBrTags(label: string): string
+  stripFormattingTags(text: string): string
+  escapeXml(text: string): string
+  renderMultilineText(
+    text: string,
+    cx: number,
+    cy: number,
+    fontSize: number,
+    attrs: string,
+    baselineShift?: number
+  ): string
+  renderMultilineTextWithBackground(
+    text: string,
+    cx: number,
+    cy: number,
+    textWidth: number,
+    textHeight: number,
+    fontSize: number,
+    padding: number,
+    textAttrs: string,
+    bgAttrs: string
+  ): string
+}
+
+const rustAddon = require('../../crates/beautiful-mermaid-napi/index.js') as RustAddon
+
+function withRustFlag<T>(flag: string | undefined, fn: () => T): T {
+  const prev = process.env.BEAUTIFUL_MERMAID_USE_RUST
+  if (flag === undefined) {
+    delete process.env.BEAUTIFUL_MERMAID_USE_RUST
+  } else {
+    process.env.BEAUTIFUL_MERMAID_USE_RUST = flag
+  }
+  try {
+    return fn()
+  } finally {
+    if (prev === undefined) {
+      delete process.env.BEAUTIFUL_MERMAID_USE_RUST
+    } else {
+      process.env.BEAUTIFUL_MERMAID_USE_RUST = prev
+    }
+  }
+}
+
+function runTs<T>(fn: () => T): T {
+  return withRustFlag(undefined, fn)
+}
+
+describe('multiline utils rust parity', () => {
+  it('requires native addon when rust path is enforced', () => {
+    if (process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE === '1') {
+      expect(rustAddon.__nativeLoaded).toBe(true)
+    }
+  })
+
+  it('normalizes br variants to newline', () => {
+    const inputs = ['a<br>b', 'a<br/>b', 'a<br />b', 'a<BR>b']
+    for (const input of inputs) {
+      const ts = runTs(() => normalizeBrTags(input))
+      const rust = rustAddon.normalizeBrTags(input)
+      expect(ts).toBe('a\nb')
+      expect(rust).toBe(ts)
+    }
+  })
+
+  it('keeps invalid br form with slash-space unchanged', () => {
+    const input = 'a<br/ >b'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('a<br/ >b')
+    expect(rust).toBe(ts)
+  })
+
+  it('handles unicode whitespace in tags same as ts', () => {
+    const brInput = 'a<br\u00a0>b'
+    const subInput = 'H<sub\u00a0>2</sub\u00a0>O'
+    const boldInput = '<b\u00a0>bold</b\u00a0>'
+
+    const tsBr = runTs(() => normalizeBrTags(brInput))
+    const rustBr = rustAddon.normalizeBrTags(brInput)
+    expect(tsBr).toBe('a\nb')
+    expect(rustBr).toBe(tsBr)
+
+    const tsSub = runTs(() => normalizeBrTags(subInput))
+    const rustSub = rustAddon.normalizeBrTags(subInput)
+    expect(tsSub).toBe('H2O')
+    expect(rustSub).toBe(tsSub)
+
+    const tsBold = runTs(() => stripFormattingTags(boldInput))
+    const rustBold = rustAddon.stripFormattingTags(boldInput)
+    expect(tsBold).toBe('bold')
+    expect(rustBold).toBe(tsBold)
+  })
+
+  it('converts literal \\n to newline', () => {
+    const input = 'a\\nb'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('a\nb')
+    expect(rust).toBe(ts)
+  })
+
+  it('strips surrounding quote for single quote char input', () => {
+    const input = '"'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('')
+    expect(rust).toBe(ts)
+  })
+
+  it('converts markdown bold', () => {
+    const input = '**text**'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('<b>text</b>')
+    expect(rust).toBe(ts)
+  })
+
+  it('does not apply bold/strike across line breaks', () => {
+    const input = '**a<br>b** and ~~x<br>y~~'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('**a\nb** and ~~x\ny~~')
+    expect(rust).toBe(ts)
+  })
+
+  it('matches overlapping markdown pair behavior for bold/strike', () => {
+    const boldInput = '*****'
+    const strikeInput = '~~~~~'
+    const tsBold = runTs(() => normalizeBrTags(boldInput))
+    const rustBold = rustAddon.normalizeBrTags(boldInput)
+    const tsStrike = runTs(() => normalizeBrTags(strikeInput))
+    const rustStrike = rustAddon.normalizeBrTags(strikeInput)
+    expect(tsBold).toBe('<b>*</b>')
+    expect(rustBold).toBe(tsBold)
+    expect(tsStrike).toBe('<s>~</s>')
+    expect(rustStrike).toBe(tsStrike)
+  })
+
+  it('handles markdown italic boundary', () => {
+    const input = '*a* 与 * a *'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('<i>a</i> 与 * a *')
+    expect(rust).toBe(ts)
+  })
+
+  it('converts markdown strike', () => {
+    const input = '~~text~~'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('<s>text</s>')
+    expect(rust).toBe(ts)
+  })
+
+  it('strips special sub/sup tags', () => {
+    const input = 'H<sub>2</sub>O 与 x<sup>2</sup>'
+    const ts = runTs(() => normalizeBrTags(input))
+    const rust = rustAddon.normalizeBrTags(input)
+    expect(ts).toBe('H2O 与 x2')
+    expect(rust).toBe(ts)
+  })
+
+  it('escapes xml characters', () => {
+    const input = '& < > " \''
+    const ts = runTs(() => escapeXml(input))
+    const rust = rustAddon.escapeXml(input)
+    expect(ts).toBe('&amp; &lt; &gt; &quot; &#39;')
+    expect(rust).toBe(ts)
+  })
+
+  it('renders nested formatting tags consistently', () => {
+    const input = '<b><i>text</i></b>'
+    const attrs = 'text-anchor="middle"'
+    const ts = runTs(() => renderMultilineText(input, 120, 80, 16, attrs))
+    const rust = rustAddon.renderMultilineText(input, 120, 80, 16, attrs, 0.35)
+    expect(rust).toBe(ts)
+    expect(ts).toContain('font-weight="bold"')
+    expect(ts).toContain('font-style="italic"')
+  })
+
+  it('keeps multiline dy calculation equal', () => {
+    const input = 'line1\nline2\nline3'
+    const attrs = 'text-anchor="middle"'
+    const ts = runTs(() => renderMultilineText(input, 120, 80, 16, attrs))
+    const rust = rustAddon.renderMultilineText(input, 120, 80, 16, attrs, 0.35)
+    expect(rust).toBe(ts)
+    expect(ts).toContain('dy="-15.200000000000001"')
+    expect(ts.match(/dy="20.8"/g)).toHaveLength(2)
+  })
+
+  it('keeps background rendering output equal', () => {
+    const input = 'line1\nline2'
+    const textAttrs = 'text-anchor="middle" fill="var(--_text)"'
+    const bgAttrs = 'fill="var(--_bg)"'
+    const ts = runTs(() =>
+      renderMultilineTextWithBackground(
+        input,
+        100,
+        80,
+        120,
+        42,
+        16,
+        6,
+        textAttrs,
+        bgAttrs
+      )
+    )
+    const rust = rustAddon.renderMultilineTextWithBackground(
+      input,
+      100,
+      80,
+      120,
+      42,
+      16,
+      6,
+      textAttrs,
+      bgAttrs
+    )
+    expect(rust).toBe(ts)
+  })
+
+  it('uses rust adapter when BEAUTIFUL_MERMAID_USE_RUST=1', () => {
+    const input = '**text**'
+    const expected = rustAddon.normalizeBrTags(input)
+    const actual = withRustFlag('1', () => normalizeBrTags(input))
+    expect(actual).toBe(expected)
+  })
+
+  it('stripFormattingTags stays equal between ts and rust', () => {
+    const input = '<b>bold</b> and <i>italic</i>'
+    const ts = runTs(() => stripFormattingTags(input))
+    const rust = rustAddon.stripFormattingTags(input)
+    expect(ts).toBe('bold and italic')
+    expect(rust).toBe(ts)
+  })
+})
