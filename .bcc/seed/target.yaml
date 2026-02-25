@@ -1,0 +1,227 @@
+version: 0.4.0
+source_of_truth: inferred_from_repo
+notes:
+  - "Auto-generated from beautiful-mermaid repo structure (ASCII-focused)"
+
+modules:
+  - module_id: core
+    display_name: Core
+    precedence: 2000
+    path_rules:
+      include:
+        - "src/parser.ts"
+        - "src/types.ts"
+        - "src/multiline-utils.ts"
+        - "src/text-metrics.ts"
+        - "src/sequence/**"
+        - "src/class/**"
+        - "src/er/**"
+
+  - module_id: ascii
+    display_name: ASCII
+    precedence: 2000
+    path_rules:
+      include:
+        - "src/ascii/**"
+
+  - module_id: core_parser
+    display_name: Mermaid Parser
+    parent: core
+    path_rules:
+      include:
+        - "src/parser.ts"
+
+  - module_id: core_types
+    display_name: Mermaid Types
+    parent: core
+    path_rules:
+      include:
+        - "src/types.ts"
+
+  - module_id: core_utils
+    display_name: Core Utils
+    parent: core
+    path_rules:
+      include:
+        - "src/multiline-utils.ts"
+        - "src/text-metrics.ts"
+
+  - module_id: sequence_core
+    display_name: Sequence Parser
+    parent: core
+    path_rules:
+      include:
+        - "src/sequence/**"
+
+  - module_id: class_core
+    display_name: Class Parser
+    parent: core
+    path_rules:
+      include:
+        - "src/class/**"
+
+  - module_id: er_core
+    display_name: ER Parser
+    parent: core
+    path_rules:
+      include:
+        - "src/er/**"
+
+  - module_id: ascii_core
+    display_name: ASCII Core
+    parent: ascii
+    path_rules:
+      include:
+        - "src/ascii/*.ts"
+      exclude:
+        - "src/ascii/sequence.ts"
+        - "src/ascii/class-diagram.ts"
+        - "src/ascii/er-diagram.ts"
+
+  - module_id: ascii_shapes
+    display_name: ASCII Shapes
+    parent: ascii
+    path_rules:
+      include:
+        - "src/ascii/shapes/**"
+
+  - module_id: ascii_sequence
+    display_name: ASCII Sequence
+    parent: ascii
+    path_rules:
+      include:
+        - "src/ascii/sequence.ts"
+
+  - module_id: ascii_class
+    display_name: ASCII Class
+    parent: ascii
+    path_rules:
+      include:
+        - "src/ascii/class-diagram.ts"
+
+  - module_id: ascii_er
+    display_name: ASCII ER
+    parent: ascii
+    path_rules:
+      include:
+        - "src/ascii/er-diagram.ts"
+
+relations_expected:
+  - caller: ascii_core
+    callee: core_parser
+    allowed: true
+    rationale: "ASCII flowchart parsing relies on core parser"
+  - caller: ascii_core
+    callee: ascii_shapes
+    allowed: true
+    rationale: "ASCII core renders node shapes"
+  - caller: ascii_core
+    callee: ascii_sequence
+    allowed: true
+    rationale: "ASCII 入口层分发到 sequence 渲染器"
+  - caller: ascii_core
+    callee: ascii_class
+    allowed: true
+    rationale: "ASCII 入口层分发到 class 渲染器"
+  - caller: ascii_core
+    callee: ascii_er
+    allowed: true
+    rationale: "ASCII 入口层分发到 ER 渲染器"
+  - caller: ascii_core
+    callee: core_types
+    allowed: true
+    rationale: "ASCII 类型依赖核心类型定义"
+  - caller: ascii_sequence
+    callee: sequence_core
+    allowed: true
+  - caller: ascii_class
+    callee: class_core
+    allowed: true
+  - caller: ascii_er
+    callee: er_core
+    allowed: true
+  - caller: ascii_sequence
+    callee: ascii_core
+    allowed: true
+  - caller: ascii_class
+    callee: ascii_core
+    allowed: true
+  - caller: ascii_er
+    callee: ascii_core
+    allowed: true
+  - caller: ascii_shapes
+    callee: ascii_core
+    allowed: true
+  - caller: core_parser
+    callee: core_types
+    allowed: true
+    rationale: "解析器依赖类型定义"
+  - caller: core_parser
+    callee: core_utils
+    allowed: true
+    rationale: "解析器复用多行文本工具"
+  - caller: sequence_core
+    callee: core_utils
+    allowed: true
+    rationale: "sequence parser 复用多行文本工具"
+  - caller: class_core
+    callee: core_utils
+    allowed: true
+    rationale: "class parser 复用多行文本工具"
+  - caller: er_core
+    callee: core_utils
+    allowed: true
+    rationale: "ER parser 复用多行文本工具"
+
+flows:
+  - name: "ascii_parse_dep"
+    steps:
+      - from: ascii_core
+        to: core_parser
+        action: "parse_to_graph"
+
+  - name: "ascii_shape_dep"
+    steps:
+      - from: ascii_core
+        to: ascii_shapes
+        action: "render_shapes"
+
+  - name: "ascii_sequence"
+    steps:
+      - from: ascii_sequence
+        to: sequence_core
+        action: "render_sequence"
+
+  - name: "ascii_class"
+    steps:
+      - from: ascii_class
+        to: class_core
+        action: "render_class"
+
+  - name: "ascii_er"
+    steps:
+      - from: ascii_er
+        to: er_core
+        action: "render_er"
+
+boundaries:
+  - module_id: ascii_core
+    public_paths:
+      - "src/ascii/*.ts"
+  - module_id: core_parser
+    public_paths:
+      - "src/parser.ts"
+  - module_id: sequence_core
+    public_paths:
+      - "src/sequence/parser.ts"
+      - "src/sequence/types.ts"
+  - module_id: class_core
+    public_paths:
+      - "src/class/parser.ts"
+      - "src/class/types.ts"
+  - module_id: er_core
+    public_paths:
+      - "src/er/parser.ts"
+      - "src/er/types.ts"
+
+events: []

@@ -1,0 +1,9 @@
+version: 0.4.0
+kind: transition_contract
+base: /home/wangbo/document/beautiful-mermaid/artifacts/arch/target/target.target-matrix.yaml
+intent: Transition contract between current codebase and target
+notes:
+- temporary_allow_edges are tolerated only during migration
+- blocked_edges are immediate cleanup targets
+temporary_allow_edges: []
+blocked_edges: []
