@@ -34,6 +34,29 @@ N-API 落地步骤（每个模块一轮）：
 - Bun 支持 `.node` 但环境差异仍可能存在，遇到问题可临时切到 Node 运行测试。
 - Rust 侧建议输出与 TS 完全一致的结构（字段名、可选字段、顺序无关）。
 
+## 架构版本管理（flat / target / transition）
+
+目标：保证“TS 现状验证”和“目标架构约束”同时存在，但只在需要时迭代 transition 版本。
+
+约定：
+- `flat.yaml`：仅反映 **当前 TS 实际依赖**，用于验证现状；不做版本号。
+- `target.yaml`：终极目标架构（带 parent 分层）；不做版本号。
+- `transition/vN.yaml`：过渡版本，只在 **发生架构拆分/分层调整** 时递增。
+
+什么时候升级 transition 版本：
+- 引入或调整 `parent` 分层
+- 模块拆分/合并（例如把 `ascii_core` 再拆成 `ascii_layout` / `ascii_render`）
+- 明确计划消除某类依赖边
+
+什么时候不需要升级：
+- 单文件实现替换（Rust/TS 互换）
+- 内部实现调整但不改变模块依赖结构
+
+建议流程：
+1. 先维护 `flat.yaml`，确保 TS 现状验证始终可通过
+2. 当需要结构化演进时，更新 `target.yaml`
+3. 若引入拆分/迁移阶段，生成新的 `transition/vN.yaml`
+
 ## N-API 迁移任务清单（按文件）
 
 | Task (File) | 说明 | Blocked by | Status |
