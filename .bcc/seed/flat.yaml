@@ -1,0 +1,177 @@
+version: 0.4.0
+source_of_truth: inferred_from_repo
+notes:
+- Auto-generated from beautiful-mermaid repo structure (ASCII-focused)
+modules:
+- module_id: core_parser
+  display_name: Mermaid Parser
+  path_rules:
+    include:
+    - src/parser.ts
+- module_id: core_types
+  display_name: Mermaid Types
+  path_rules:
+    include:
+    - src/types.ts
+- module_id: core_utils
+  display_name: Core Utils
+  path_rules:
+    include:
+    - src/multiline-utils.ts
+    - src/text-metrics.ts
+- module_id: sequence_core
+  display_name: Sequence Parser
+  path_rules:
+    include:
+    - src/sequence/**
+- module_id: class_core
+  display_name: Class Parser
+  path_rules:
+    include:
+    - src/class/**
+- module_id: er_core
+  display_name: ER Parser
+  path_rules:
+    include:
+    - src/er/**
+- module_id: ascii_core
+  display_name: ASCII Core
+  path_rules:
+    include:
+    - src/ascii/*.ts
+    exclude:
+    - src/ascii/sequence.ts
+    - src/ascii/class-diagram.ts
+    - src/ascii/er-diagram.ts
+- module_id: ascii_shapes
+  display_name: ASCII Shapes
+  path_rules:
+    include:
+    - src/ascii/shapes/**
+- module_id: ascii_sequence
+  display_name: ASCII Sequence
+  path_rules:
+    include:
+    - src/ascii/sequence.ts
+- module_id: ascii_class
+  display_name: ASCII Class
+  path_rules:
+    include:
+    - src/ascii/class-diagram.ts
+- module_id: ascii_er
+  display_name: ASCII ER
+  path_rules:
+    include:
+    - src/ascii/er-diagram.ts
+relations_expected:
+- caller: ascii_core
+  callee: core_parser
+  allowed: true
+  rationale: ASCII flowchart parsing relies on core parser
+- caller: ascii_core
+  callee: ascii_shapes
+  allowed: true
+  rationale: ASCII core renders node shapes
+- caller: ascii_core
+  callee: ascii_sequence
+  allowed: true
+  rationale: "ASCII \u5165\u53E3\u5C42\u5206\u53D1\u5230 sequence \u6E32\u67D3\u5668"
+- caller: ascii_core
+  callee: ascii_class
+  allowed: true
+  rationale: "ASCII \u5165\u53E3\u5C42\u5206\u53D1\u5230 class \u6E32\u67D3\u5668"
+- caller: ascii_core
+  callee: ascii_er
+  allowed: true
+  rationale: "ASCII \u5165\u53E3\u5C42\u5206\u53D1\u5230 ER \u6E32\u67D3\u5668"
+- caller: ascii_core
+  callee: core_types
+  allowed: true
+  rationale: "ASCII \u7C7B\u578B\u4F9D\u8D56\u6838\u5FC3\u7C7B\u578B\u5B9A\u4E49"
+- caller: ascii_sequence
+  callee: sequence_core
+  allowed: true
+- caller: ascii_class
+  callee: class_core
+  allowed: true
+- caller: ascii_er
+  callee: er_core
+  allowed: true
+- caller: ascii_sequence
+  callee: ascii_core
+  allowed: true
+- caller: ascii_class
+  callee: ascii_core
+  allowed: true
+- caller: ascii_er
+  callee: ascii_core
+  allowed: true
+- caller: ascii_shapes
+  callee: ascii_core
+  allowed: true
+- caller: core_parser
+  callee: core_types
+  allowed: true
+  rationale: "\u89E3\u6790\u5668\u4F9D\u8D56\u7C7B\u578B\u5B9A\u4E49"
+- caller: core_parser
+  callee: core_utils
+  allowed: true
+  rationale: "\u89E3\u6790\u5668\u590D\u7528\u591A\u884C\u6587\u672C\u5DE5\u5177"
+- caller: sequence_core
+  callee: core_utils
+  allowed: true
+  rationale: "sequence parser \u590D\u7528\u591A\u884C\u6587\u672C\u5DE5\u5177"
+- caller: class_core
+  callee: core_utils
+  allowed: true
+  rationale: "class parser \u590D\u7528\u591A\u884C\u6587\u672C\u5DE5\u5177"
+- caller: er_core
+  callee: core_utils
+  allowed: true
+  rationale: "ER parser \u590D\u7528\u591A\u884C\u6587\u672C\u5DE5\u5177"
+flows:
+- name: ascii_parse_dep
+  steps:
+  - from: ascii_core
+    to: core_parser
+    action: parse_to_graph
+- name: ascii_shape_dep
+  steps:
+  - from: ascii_core
+    to: ascii_shapes
+    action: render_shapes
+- name: ascii_sequence
+  steps:
+  - from: ascii_sequence
+    to: sequence_core
+    action: render_sequence
+- name: ascii_class
+  steps:
+  - from: ascii_class
+    to: class_core
+    action: render_class
+- name: ascii_er
+  steps:
+  - from: ascii_er
+    to: er_core
+    action: render_er
+boundaries:
+- module_id: ascii_core
+  public_paths:
+  - src/ascii/*.ts
+- module_id: core_parser
+  public_paths:
+  - src/parser.ts
+- module_id: sequence_core
+  public_paths:
+  - src/sequence/parser.ts
+  - src/sequence/types.ts
+- module_id: class_core
+  public_paths:
+  - src/class/parser.ts
+  - src/class/types.ts
+- module_id: er_core
+  public_paths:
+  - src/er/parser.ts
+  - src/er/types.ts
+events: []
