@@ -9,8 +9,6 @@
 import { createRequire } from 'node:module'
 import { LINE_HEIGHT_RATIO } from './text-metrics.ts'
 
-const require = createRequire(import.meta.url)
-
 interface MultilineRustAddon {
   __nativeLoaded: boolean
   normalizeBrTags(label: string): string
@@ -38,6 +36,21 @@ interface MultilineRustAddon {
 }
 
 let rustAddonCache: MultilineRustAddon | null | undefined
+let nodeRequireCache: ((id: string) => unknown) | null | undefined
+
+function getNodeRequire(): ((id: string) => unknown) | null {
+  if (nodeRequireCache !== undefined) return nodeRequireCache
+  if (typeof createRequire !== 'function') {
+    nodeRequireCache = null
+    return nodeRequireCache
+  }
+  try {
+    nodeRequireCache = createRequire(import.meta.url)
+  } catch {
+    nodeRequireCache = null
+  }
+  return nodeRequireCache
+}
 
 function isRustMultilineEnabled(): boolean {
   const flag = typeof process !== 'undefined' ? process.env?.BEAUTIFUL_MERMAID_USE_RUST : undefined
@@ -48,8 +61,13 @@ function isRustMultilineEnabled(): boolean {
 
 function loadRustAddon(): MultilineRustAddon | null {
   if (rustAddonCache !== undefined) return rustAddonCache
+  const nodeRequire = getNodeRequire()
+  if (!nodeRequire) {
+    rustAddonCache = null
+    return rustAddonCache
+  }
   try {
-    const addon = require('../crates/beautiful-mermaid-napi/index.js') as Partial<MultilineRustAddon>
+    const addon = nodeRequire('../crates/beautiful-mermaid-napi/index.js') as Partial<MultilineRustAddon>
     if (
       addon.__nativeLoaded === true &&
       typeof addon.normalizeBrTags === 'function' &&
