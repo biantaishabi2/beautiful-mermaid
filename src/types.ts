@@ -243,9 +243,62 @@ export interface PositionedGraphRuntimeResult {
   fallbackReason?: string
 }
 
+const DIRECTION_VALUES = new Set<Direction>(['TD', 'TB', 'LR', 'BT', 'RL'])
+const NODE_SHAPE_VALUES = new Set<NodeShape>([
+  'rectangle',
+  'rounded',
+  'diamond',
+  'stadium',
+  'circle',
+  'subroutine',
+  'doublecircle',
+  'hexagon',
+  'cylinder',
+  'asymmetric',
+  'trapezoid',
+  'trapezoid-alt',
+  'state-start',
+  'state-end',
+])
+const EDGE_STYLE_VALUES = new Set<EdgeStyle>(['solid', 'dotted', 'thick'])
+const MAX_SUBGRAPH_CONTRACT_DEPTH = 256
+const MAX_GROUP_CONTRACT_DEPTH = 256
+
+function isDirection(value: unknown): value is Direction {
+  return typeof value === 'string' && DIRECTION_VALUES.has(value as Direction)
+}
+
+function isNodeShape(value: unknown): value is NodeShape {
+  return typeof value === 'string' && NODE_SHAPE_VALUES.has(value as NodeShape)
+}
+
+function isEdgeStyle(value: unknown): value is EdgeStyle {
+  return typeof value === 'string' && EDGE_STYLE_VALUES.has(value as EdgeStyle)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!isPlainObject(value)) return false
+  return Object.values(value).every(entry => typeof entry === 'string')
+}
+
+function isIntegerLikeKey(key: string): boolean {
+  return /^\d+$/.test(key)
+}
+
+function hasIntegerLikeRecordKey(record: Record<string, unknown>): boolean {
+  return Object.keys(record).some(isIntegerLikeKey)
+}
+
 function mapToRecord<V>(map: Map<string, V>): Record<string, V> {
   const record: Record<string, V> = {}
   for (const [key, value] of map.entries()) {
+    if (isIntegerLikeKey(key)) {
+      throw new Error(`Map key "${key}" 为整数样式，无法保证 Record 序列化顺序稳定`)
+    }
     record[key] = value
   }
   return record
@@ -259,30 +312,46 @@ function recordToMap<V>(record: Record<string, V>): Map<string, V> {
   return new Map(recordEntries(record))
 }
 
+function cloneMermaidSubgraphTree(root: MermaidSubgraph): MermaidSubgraph {
+  const rootClone: MermaidSubgraph = {
+    id: root.id,
+    label: root.label,
+    nodeIds: [...root.nodeIds],
+    children: [],
+  }
+  if (root.direction !== undefined) rootClone.direction = root.direction
+
+  const stack: Array<{ source: MermaidSubgraph; target: MermaidSubgraph; depth: number }> = [
+    { source: root, target: rootClone, depth: 0 },
+  ]
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!
+    if (frame.depth > MAX_SUBGRAPH_CONTRACT_DEPTH) {
+      throw new RangeError(`Subgraph 深度超过限制（>${MAX_SUBGRAPH_CONTRACT_DEPTH}）`)
+    }
+    for (const child of frame.source.children) {
+      const childClone: MermaidSubgraph = {
+        id: child.id,
+        label: child.label,
+        nodeIds: [...child.nodeIds],
+        children: [],
+      }
+      if (child.direction !== undefined) childClone.direction = child.direction
+      frame.target.children.push(childClone)
+      stack.push({ source: child, target: childClone, depth: frame.depth + 1 })
+    }
+  }
+
+  return rootClone
+}
+
 function toMermaidSubgraphContract(subgraph: MermaidSubgraph): MermaidSubgraph {
-  const next: MermaidSubgraph = {
-    id: subgraph.id,
-    label: subgraph.label,
-    nodeIds: [...subgraph.nodeIds],
-    children: subgraph.children.map(toMermaidSubgraphContract),
-  }
-  if (subgraph.direction !== undefined) {
-    next.direction = subgraph.direction
-  }
-  return next
+  return cloneMermaidSubgraphTree(subgraph)
 }
 
 function fromMermaidSubgraphContract(subgraph: MermaidSubgraph): MermaidSubgraph {
-  const next: MermaidSubgraph = {
-    id: subgraph.id,
-    label: subgraph.label,
-    nodeIds: [...subgraph.nodeIds],
-    children: subgraph.children.map(fromMermaidSubgraphContract),
-  }
-  if (subgraph.direction !== undefined) {
-    next.direction = subgraph.direction
-  }
-  return next
+  return cloneMermaidSubgraphTree(subgraph)
 }
 
 export function toMermaidGraphContract(graph: MermaidGraph): MermaidGraphContract {
@@ -453,32 +522,138 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isRecordOfObjects(value: unknown): value is Record<string, Record<string, unknown>> {
+function isPointContract(value: unknown): value is Point {
   if (!isPlainObject(value)) return false
-  return Object.values(value).every(entry => isPlainObject(entry))
+  return isFiniteNumber(value.x) && isFiniteNumber(value.y)
+}
+
+function isMermaidNodeContract(value: unknown): value is MermaidNode {
+  if (!isPlainObject(value)) return false
+  return (
+    typeof value.id === 'string' &&
+    typeof value.label === 'string' &&
+    isNodeShape(value.shape)
+  )
+}
+
+function isMermaidEdgeContract(value: unknown): value is MermaidEdge {
+  if (!isPlainObject(value)) return false
+  if (typeof value.source !== 'string') return false
+  if (typeof value.target !== 'string') return false
+  if (!isEdgeStyle(value.style)) return false
+  if (typeof value.hasArrowStart !== 'boolean') return false
+  if (typeof value.hasArrowEnd !== 'boolean') return false
+  if (value.label !== undefined && typeof value.label !== 'string') return false
+  return true
+}
+
+function isMermaidSubgraphContract(value: unknown): value is MermaidSubgraph {
+  if (!isPlainObject(value)) return false
+  const stack: Array<{ subgraph: Record<string, unknown>; depth: number }> = [{ subgraph: value, depth: 0 }]
+
+  while (stack.length > 0) {
+    const { subgraph, depth } = stack.pop()!
+    if (depth > MAX_SUBGRAPH_CONTRACT_DEPTH) return false
+    if (typeof subgraph.id !== 'string') return false
+    if (typeof subgraph.label !== 'string') return false
+    if (!Array.isArray(subgraph.nodeIds) || !subgraph.nodeIds.every(id => typeof id === 'string')) return false
+    if (!Array.isArray(subgraph.children)) return false
+    if (subgraph.direction !== undefined && !isDirection(subgraph.direction)) return false
+    for (const child of subgraph.children) {
+      if (!isPlainObject(child)) return false
+      stack.push({ subgraph: child, depth: depth + 1 })
+    }
+  }
+
+  return true
+}
+
+function isRecordOfMermaidNodes(value: unknown): value is Record<string, MermaidNode> {
+  if (!isPlainObject(value)) return false
+  if (hasIntegerLikeRecordKey(value)) return false
+  return Object.values(value).every(entry => isMermaidNodeContract(entry))
+}
+
+function isRecordOfStringRecords(value: unknown): value is Record<string, Record<string, string>> {
+  if (!isPlainObject(value)) return false
+  if (hasIntegerLikeRecordKey(value)) return false
+  return Object.values(value).every(entry => isStringRecord(entry))
+}
+
+function isPositionedNodeContract(value: unknown): value is PositionedNodeContract {
+  if (!isPlainObject(value)) return false
+  if (typeof value.id !== 'string') return false
+  if (typeof value.label !== 'string') return false
+  if (!isNodeShape(value.shape)) return false
+  if (!isFiniteNumber(value.x)) return false
+  if (!isFiniteNumber(value.y)) return false
+  if (!isFiniteNumber(value.width)) return false
+  if (!isFiniteNumber(value.height)) return false
+  if (value.inlineStyle !== undefined && !isStringRecord(value.inlineStyle)) return false
+  return true
+}
+
+function isPositionedEdgeContract(value: unknown): value is PositionedEdgeContract {
+  if (!isPlainObject(value)) return false
+  if (typeof value.source !== 'string') return false
+  if (typeof value.target !== 'string') return false
+  if (!isEdgeStyle(value.style)) return false
+  if (typeof value.hasArrowStart !== 'boolean') return false
+  if (typeof value.hasArrowEnd !== 'boolean') return false
+  if (!Array.isArray(value.points) || !value.points.every(point => isPointContract(point))) return false
+  if (value.label !== undefined && typeof value.label !== 'string') return false
+  if (value.labelPosition !== undefined && !isPointContract(value.labelPosition)) return false
+  return true
+}
+
+function isPositionedGroupContract(value: unknown): value is PositionedGroupContract {
+  if (!isPlainObject(value)) return false
+  const stack: Array<{ group: Record<string, unknown>; depth: number }> = [{ group: value, depth: 0 }]
+  while (stack.length > 0) {
+    const { group, depth } = stack.pop()!
+    if (depth > MAX_GROUP_CONTRACT_DEPTH) return false
+    if (typeof group.id !== 'string') return false
+    if (typeof group.label !== 'string') return false
+    if (!isFiniteNumber(group.x)) return false
+    if (!isFiniteNumber(group.y)) return false
+    if (!isFiniteNumber(group.width)) return false
+    if (!isFiniteNumber(group.height)) return false
+    if (!Array.isArray(group.children)) return false
+    for (const child of group.children) {
+      if (!isPlainObject(child)) return false
+      stack.push({ group: child, depth: depth + 1 })
+    }
+  }
+  return true
 }
 
 function isMermaidGraphContract(value: unknown): value is MermaidGraphContract {
   if (!isPlainObject(value)) return false
   return (
-    typeof value.direction === 'string' &&
-    isPlainObject(value.nodes) &&
+    isDirection(value.direction) &&
+    isRecordOfMermaidNodes(value.nodes) &&
     Array.isArray(value.edges) &&
+    value.edges.every(edge => isMermaidEdgeContract(edge)) &&
     Array.isArray(value.subgraphs) &&
-    isRecordOfObjects(value.classDefs) &&
-    isPlainObject(value.classAssignments) &&
-    isRecordOfObjects(value.nodeStyles)
+    value.subgraphs.every(subgraph => isMermaidSubgraphContract(subgraph)) &&
+    isRecordOfStringRecords(value.classDefs) &&
+    isStringRecord(value.classAssignments) &&
+    !hasIntegerLikeRecordKey(value.classAssignments) &&
+    isRecordOfStringRecords(value.nodeStyles)
   )
 }
 
 function isPositionedGraphContract(value: unknown): value is PositionedGraphContract {
   if (!isPlainObject(value)) return false
   return (
-    typeof value.width === 'number' &&
-    typeof value.height === 'number' &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height) &&
     Array.isArray(value.nodes) &&
+    value.nodes.every(node => isPositionedNodeContract(node)) &&
     Array.isArray(value.edges) &&
-    Array.isArray(value.groups)
+    value.edges.every(edge => isPositionedEdgeContract(edge)) &&
+    Array.isArray(value.groups) &&
+    value.groups.every(group => isPositionedGroupContract(group))
   )
 }
 
@@ -547,10 +722,22 @@ export function normalizeMermaidGraphWithRustFallback(
   graph: MermaidGraph,
   options: TypesContractRuntimeOptions = {}
 ): MermaidGraphRuntimeResult {
-  const resolved = resolveTypesContractPayload(
-    { mermaidGraph: toMermaidGraphContract(graph) },
-    options
-  )
+  if (!isRustEnabled(options.useRust)) {
+    return { engine: 'ts', graph }
+  }
+
+  let contract: MermaidGraphContract
+  try {
+    contract = toMermaidGraphContract(graph)
+  } catch (error) {
+    return {
+      engine: 'ts',
+      graph,
+      fallbackReason: `Rust 契约校验失败：${formatError(error)}`,
+    }
+  }
+
+  const resolved = resolveTypesContractPayload({ mermaidGraph: contract }, options)
   const mermaidGraph = resolved.payload.mermaidGraph
   if (!mermaidGraph) {
     return {
@@ -559,10 +746,18 @@ export function normalizeMermaidGraphWithRustFallback(
       fallbackReason: 'Rust 契约校验失败：mermaidGraph 缺失',
     }
   }
-  return {
-    engine: resolved.engine,
-    graph: fromMermaidGraphContract(mermaidGraph),
-    fallbackReason: resolved.fallbackReason,
+  try {
+    return {
+      engine: resolved.engine,
+      graph: fromMermaidGraphContract(mermaidGraph),
+      fallbackReason: resolved.fallbackReason,
+    }
+  } catch (error) {
+    return {
+      engine: 'ts',
+      graph,
+      fallbackReason: `Rust 契约校验失败：${formatError(error)}`,
+    }
   }
 }
 
@@ -570,10 +765,22 @@ export function normalizePositionedGraphWithRustFallback(
   graph: PositionedGraph,
   options: TypesContractRuntimeOptions = {}
 ): PositionedGraphRuntimeResult {
-  const resolved = resolveTypesContractPayload(
-    { positionedGraph: toPositionedGraphContract(graph) },
-    options
-  )
+  if (!isRustEnabled(options.useRust)) {
+    return { engine: 'ts', graph }
+  }
+
+  let contract: PositionedGraphContract
+  try {
+    contract = toPositionedGraphContract(graph)
+  } catch (error) {
+    return {
+      engine: 'ts',
+      graph,
+      fallbackReason: `Rust 契约校验失败：${formatError(error)}`,
+    }
+  }
+
+  const resolved = resolveTypesContractPayload({ positionedGraph: contract }, options)
 
   const positionedGraph = resolved.payload.positionedGraph
   if (!positionedGraph) {
@@ -583,10 +790,17 @@ export function normalizePositionedGraphWithRustFallback(
       fallbackReason: 'Rust 契约校验失败：positionedGraph 缺失',
     }
   }
-
-  return {
-    engine: resolved.engine,
-    graph: fromPositionedGraphContract(positionedGraph),
-    fallbackReason: resolved.fallbackReason,
+  try {
+    return {
+      engine: resolved.engine,
+      graph: fromPositionedGraphContract(positionedGraph),
+      fallbackReason: resolved.fallbackReason,
+    }
+  } catch (error) {
+    return {
+      engine: 'ts',
+      graph,
+      fallbackReason: `Rust 契约校验失败：${formatError(error)}`,
+    }
   }
 }

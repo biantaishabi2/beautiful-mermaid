@@ -160,6 +160,12 @@ describe('parseMermaid – node shapes (Batch 2)', () => {
     expect(g.nodes.get('A')!.shape).toBe('trapezoid-alt')
     expect(g.nodes.get('A')!.label).toBe('Alt Trapezoid')
   })
+
+  it('ignores numeric-leading flowchart node IDs to avoid integer-like map keys', () => {
+    const g = parseMermaid('graph TD\n  1[One]')
+    expect(g.nodes.size).toBe(0)
+    expect(g.edges).toHaveLength(0)
+  })
 })
 
 // ============================================================================
