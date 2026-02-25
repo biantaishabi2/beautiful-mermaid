@@ -19,7 +19,7 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-if cargo test --manifest-path crates/beautiful-mermaid-rs/Cargo.toml >"$rust_test_log" 2>&1; then
+if cargo test --offline --manifest-path crates/beautiful-mermaid-rs/Cargo.toml >"$rust_test_log" 2>&1; then
   cat "$rust_test_log"
 else
   cat "$rust_test_log"
