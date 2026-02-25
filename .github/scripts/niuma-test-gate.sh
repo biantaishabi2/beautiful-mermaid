@@ -10,6 +10,9 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# 先校验 workspace 根 Cargo.toml 可解析，避免 N-API 构建阶段的 metadata 失败。
+cargo metadata --format-version 1 --manifest-path "$REPO_ROOT/Cargo.toml" >/dev/null
+
 rust_test_log="$(mktemp)"
 rust_test_bin=""
 cleanup() {

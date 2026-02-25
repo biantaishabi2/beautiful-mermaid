@@ -133,6 +133,7 @@ pub fn get_attachment_point(
     dimensions: &ShapeDimensions,
     base_coord: DrawingCoord,
 ) -> DrawingCoord {
+    // 与 TS 保持一致：连接点计算直接复用 rectangle/box 逻辑。
     rectangle::get_box_attachment_point(dir, dimensions, base_coord)
 }
 
