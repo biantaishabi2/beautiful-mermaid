@@ -85,6 +85,27 @@ describe('multiline utils rust parity', () => {
     expect(rust).toBe(ts)
   })
 
+  it('handles unicode whitespace in tags same as ts', () => {
+    const brInput = 'a<br\u00a0>b'
+    const subInput = 'H<sub\u00a0>2</sub\u00a0>O'
+    const boldInput = '<b\u00a0>bold</b\u00a0>'
+
+    const tsBr = runTs(() => normalizeBrTags(brInput))
+    const rustBr = rustAddon.normalizeBrTags(brInput)
+    expect(tsBr).toBe('a\nb')
+    expect(rustBr).toBe(tsBr)
+
+    const tsSub = runTs(() => normalizeBrTags(subInput))
+    const rustSub = rustAddon.normalizeBrTags(subInput)
+    expect(tsSub).toBe('H2O')
+    expect(rustSub).toBe(tsSub)
+
+    const tsBold = runTs(() => stripFormattingTags(boldInput))
+    const rustBold = rustAddon.stripFormattingTags(boldInput)
+    expect(tsBold).toBe('bold')
+    expect(rustBold).toBe(tsBold)
+  })
+
   it('converts literal \\n to newline', () => {
     const input = 'a\\nb'
     const ts = runTs(() => normalizeBrTags(input))

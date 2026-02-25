@@ -173,12 +173,7 @@ fn parse_br_tag(input: &str, start: usize) -> Option<usize> {
     }
     index += 1;
 
-    while bytes
-        .get(index)
-        .is_some_and(|byte| byte.is_ascii_whitespace())
-    {
-        index += 1;
-    }
+    skip_js_whitespace(input, &mut index);
     if bytes.get(index) == Some(&b'/') {
         index += 1;
     }
@@ -238,12 +233,7 @@ fn parse_simple_tag(input: &str, start: usize, tags: &[&str]) -> Option<(usize, 
         .iter()
         .position(|tag| tag_name.eq_ignore_ascii_case(tag))?;
 
-    while bytes
-        .get(index)
-        .is_some_and(|byte| byte.is_ascii_whitespace())
-    {
-        index += 1;
-    }
+    skip_js_whitespace(input, &mut index);
     if bytes.get(index) != Some(&b'>') {
         return None;
     }
@@ -495,6 +485,36 @@ fn next_char(input: &str, index: usize) -> char {
         .expect("index is valid UTF-8 boundary")
 }
 
+fn skip_js_whitespace(input: &str, index: &mut usize) {
+    while let Some(ch) = input.get(*index..).and_then(|rest| rest.chars().next()) {
+        if !is_js_whitespace(ch) {
+            break;
+        }
+        *index += ch.len_utf8();
+    }
+}
+
+fn is_js_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0009}'
+            | '\u{000A}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000D}'
+            | '\u{0020}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200A}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}'
+            | '\u{FEFF}'
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,6 +522,7 @@ mod tests {
     #[test]
     fn normalize_br_tags_handles_markdown_and_html() {
         assert_eq!(normalize_br_tags("a<br>b"), "a\nb");
+        assert_eq!(normalize_br_tags("a<br\u{00A0}>b"), "a\nb");
         assert_eq!(normalize_br_tags("a<br/ >b"), "a<br/ >b");
         assert_eq!(normalize_br_tags("a\\nb"), "a\nb");
         assert_eq!(normalize_br_tags("\""), "");
@@ -523,6 +544,7 @@ mod tests {
         assert_eq!(normalize_br_tags("~~text~~"), "<s>text</s>");
         assert_eq!(normalize_br_tags("~~~~~"), "<s>~</s>");
         assert_eq!(normalize_br_tags("H<sub>2</sub>O"), "H2O");
+        assert_eq!(normalize_br_tags("H<sub\u{00A0}>2</sub\u{00A0}>O"), "H2O");
     }
 
     #[test]
@@ -530,6 +552,10 @@ mod tests {
         assert_eq!(
             strip_formatting_tags("<b>bold</b> <i>italic</i>"),
             "bold italic"
+        );
+        assert_eq!(
+            strip_formatting_tags("<b\u{00A0}>bold</b\u{00A0}>"),
+            "bold"
         );
         assert_eq!(escape_xml("& < > \" '"), "&amp; &lt; &gt; &quot; &#39;");
     }
