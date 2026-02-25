@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+napi_modules/
 
 # Build output
 dist/
@@ -26,3 +27,10 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# N-API artifacts
+*.node
+crates/**/target/
+crates/**/index.d.ts
+crates/**/package-lock.json
+crates/**/Cargo.lock
