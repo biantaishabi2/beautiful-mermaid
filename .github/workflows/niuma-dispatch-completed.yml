@@ -1,0 +1,49 @@
+name: niuma - Dispatch Completed
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+jobs:
+  close-after-integration-merge:
+    runs-on: self-hosted
+    if: >
+      github.event.pull_request.merged == true &&
+      (
+        startsWith(github.event.pull_request.base.ref, 'integration/') ||
+        startsWith(github.event.pull_request.head.ref, 'integration/')
+      )
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.NIUMA_PAT || github.token }}
+
+      - name: Setup niuma binary
+        run: |
+          niuma_path="$(command -v niuma || true)"
+          if [ -z "$niuma_path" ] && [ -x "/usr/local/bin/niuma" ]; then
+            niuma_path="/usr/local/bin/niuma"
+          fi
+          if [ -z "$niuma_path" ]; then
+            echo "::error::找不到 niuma 二进制，请确保 runner 上已安装 niuma（PATH=$PATH）"
+            exit 1
+          fi
+          echo "NIUMA_BIN=$niuma_path" >> "$GITHUB_ENV"
+
+      - name: Close merged and dispatch wakeup
+        env:
+          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT || github.token }}
+          REPO: ${{ github.repository }}
+          WORKSPACE: ${{ github.workspace }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          "$NIUMA_BIN" control close-merged \
+            --repo "$REPO" \
+            --repo-dir "$WORKSPACE" \
+            --pr "$PR_NUMBER" \
+            --dispatch-wakeup

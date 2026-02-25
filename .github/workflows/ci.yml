@@ -13,10 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
+
+      - name: Install N-API deps
+        if: ${{ hashFiles('crates/beautiful-mermaid-napi/package.json') != '' }}
+        run: npm --prefix crates/beautiful-mermaid-napi install
+
+      - name: Build N-API
+        if: ${{ hashFiles('crates/beautiful-mermaid-napi/package.json') != '' }}
+        run: npx --prefix crates/beautiful-mermaid-napi napi build --release
 
       - name: Install dependencies
         run: bun install

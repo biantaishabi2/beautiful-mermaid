@@ -1,0 +1,47 @@
+name: niuma - Label Guard
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+
+jobs:
+  guard:
+    runs-on: self-hosted
+    if: startsWith(github.event.label.name, 'bot:')
+    concurrency:
+      group: niuma-label-guard-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.NIUMA_PAT || github.token }}
+
+      - name: Setup niuma binary
+        run: |
+          niuma_path="$(command -v niuma || true)"
+          if [ -z "$niuma_path" ] && [ -x "/usr/local/bin/niuma" ]; then
+            niuma_path="/usr/local/bin/niuma"
+          fi
+          if [ -z "$niuma_path" ]; then
+            echo "::error::找不到 niuma 二进制，请确保 runner 上已安装 niuma（PATH=$PATH）"
+            exit 1
+          fi
+          echo "NIUMA_BIN=$niuma_path" >> "$GITHUB_ENV"
+
+      - name: Run label guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+        run: |
+          "$NIUMA_BIN" label-guard \
+            --repo "$REPO" \
+            --issue "$ISSUE_NUMBER" \
+            --actor "$ACTOR" \
+            --action "$ACTION" \
+            --label "$LABEL"
