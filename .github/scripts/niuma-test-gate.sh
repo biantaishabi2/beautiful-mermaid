@@ -1,48 +1,130 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 用法：niuma-test-gate.sh <pr_number> [repo]
-PR_NUMBER="${1:-}"
-TARGET_REPO="${2:-${REPO:-${GITHUB_REPOSITORY:-}}}"
-if [ -z "$PR_NUMBER" ]; then
-  echo "用法: $0 <pr_number> [repo]" >&2
+log() {
+  echo "[gate] $*"
+}
+
+usage() {
+  echo "usage: $0 <pr-number>" >&2
+}
+
+if [[ $# -ne 1 ]]; then
+  usage
   exit 2
 fi
 
-if ! command -v gh >/dev/null 2>&1; then
-  echo "::error::gh CLI 不可用，无法执行 PR gate" >&2
+PR_NUMBER="$1"
+if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+  echo "invalid pr-number: $PR_NUMBER" >&2
+  usage
+  exit 2
+fi
+
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo "GITHUB_TOKEN is required" >&2
+  exit 2
+fi
+
+export PATH="$HOME/.bun/bin:$PATH"
+
+HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName --jq '.baseRefName')
+HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
+BASE_SHA=$(gh pr view "$PR_NUMBER" --json baseRefOid --jq '.baseRefOid')
+
+if [[ -z "$HEAD_REF" || "$HEAD_REF" == "null" ]]; then
+  echo "unable to resolve PR head ref for #$PR_NUMBER" >&2
+  exit 1
+fi
+if [[ -z "$BASE_REF" || "$BASE_REF" == "null" ]]; then
+  echo "unable to resolve PR base ref for #$PR_NUMBER" >&2
   exit 1
 fi
 
-repo_args=()
-if [ -n "$TARGET_REPO" ]; then
-  repo_args+=(--repo "$TARGET_REPO")
+if [[ -z "$HEAD_SHA" || "$HEAD_SHA" == "null" ]]; then
+  HEAD_SHA="unknown"
+fi
+if [[ -z "$BASE_SHA" || "$BASE_SHA" == "null" ]]; then
+  BASE_SHA="unknown"
 fi
 
-if ! pr_view_err="$(gh pr view "$PR_NUMBER" "${repo_args[@]}" --json number 2>&1 >/dev/null)"; then
-  if echo "$pr_view_err" | grep -Eiq 'Could not resolve to a PullRequest|no pull requests found|not found'; then
-    echo "::warning::PR #$PR_NUMBER 在 ${TARGET_REPO:-当前仓库} 中不存在，跳过 gate"
-    exit 0
+WORK_BRANCH="niuma-gate-$PR_NUMBER"
+MERGE_REF_SOURCE=""
+MERGE_SHA=""
+
+log "baseline=merge-result"
+
+if git fetch origin "pull/${PR_NUMBER}/merge"; then
+  MERGE_SHA=$(git rev-parse FETCH_HEAD)
+  git checkout -B "$WORK_BRANCH" "$MERGE_SHA"
+  MERGE_REF_SOURCE="github-merge-ref"
+else
+  log "merge ref unavailable, fallback to local merge"
+
+  git fetch origin "$BASE_REF"
+  git fetch origin "$HEAD_REF"
+  git checkout -B "$WORK_BRANCH" "origin/$BASE_REF"
+
+  set +e
+  MERGE_OUTPUT=$(git -c user.name='niuma-gate' -c user.email='niuma-gate@local' merge --no-ff --no-edit "origin/$HEAD_REF" 2>&1)
+  MERGE_STATUS=$?
+  set -e
+
+  if [[ $MERGE_STATUS -ne 0 ]]; then
+    CONFLICT_FILES=$(git diff --name-only --diff-filter=U || true)
+    echo "CONFLICT: failed to merge origin/$HEAD_REF into origin/$BASE_REF" >&2
+    if [[ -n "$CONFLICT_FILES" ]]; then
+      echo "CONFLICT: files:" >&2
+      while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        echo "CONFLICT: $file" >&2
+      done <<< "$CONFLICT_FILES"
+    fi
+
+    MERGE_SUMMARY=$(printf '%s\n' "$MERGE_OUTPUT" | grep -E 'CONFLICT|Automatic merge failed|^error:' | head -n 20 || true)
+    if [[ -z "$MERGE_SUMMARY" ]]; then
+      MERGE_SUMMARY=$(printf '%s\n' "$MERGE_OUTPUT" | tail -n 20)
+    fi
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      echo "CONFLICT: $line" >&2
+    done <<< "$MERGE_SUMMARY"
+
+    git merge --abort >/dev/null 2>&1 || true
+    exit 1
   fi
-  echo "::error::校验 PR #$PR_NUMBER 失败：$pr_view_err" >&2
+
+  MERGE_SHA=$(git rev-parse HEAD)
+  MERGE_REF_SOURCE="local-merge"
+fi
+
+log "merge_ref_source=$MERGE_REF_SOURCE"
+log "base_sha=$BASE_SHA"
+log "head_sha=$HEAD_SHA"
+if [[ -n "$MERGE_SHA" ]]; then
+  log "merge_sha=$MERGE_SHA"
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required on runner (PATH=$PATH)" >&2
   exit 1
 fi
 
-# 等待 checks 完成（最多 5 分钟）
-for i in $(seq 1 30); do
-  pending=$(gh pr checks "$PR_NUMBER" "${repo_args[@]}" --json state --jq '[.[] | select(.state == "PENDING")] | length' 2>/dev/null || echo "0")
-  if [ "$pending" = "0" ]; then
-    break
-  fi
-  echo "等待 $pending 个 check 完成... ($i/30)"
-  sleep 10
-done
-
-failed=$(gh pr checks "$PR_NUMBER" "${repo_args[@]}" --json name,conclusion --jq '[.[] | select(.conclusion == "FAILURE" or .conclusion == "failure")] | length' 2>/dev/null || echo "0")
-if [ "$failed" != "0" ]; then
-  echo "::error::PR #$PR_NUMBER 有 $failed 个 check 失败"
-  gh pr checks "$PR_NUMBER" "${repo_args[@]}" --json name,conclusion --jq '.[] | select(.conclusion == "FAILURE" or .conclusion == "failure") | "  ✗ \(.name)"'
-  exit 1
+if [[ -f "crates/beautiful-mermaid-napi/package.json" ]]; then
+  log "building N-API package"
+  (
+    cd crates/beautiful-mermaid-napi
+    npm install
+    npx napi build --release
+  )
 fi
 
-echo "所有 PR checks 通过"
+log "running bun tests"
+bun install --frozen-lockfile
+bun test
+
+log "running typecheck"
+bun x tsc --noEmit
+
+log "all required checks passed"
