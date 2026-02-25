@@ -32,7 +32,7 @@ jobs:
 
       - name: Build N-API
         if: ${{ hashFiles('crates/beautiful-mermaid-napi/package.json') != '' }}
-        run: npx --prefix crates/beautiful-mermaid-napi napi build --release
+        run: npm --prefix crates/beautiful-mermaid-napi run build
 
       - name: Install dependencies
         run: bun install
