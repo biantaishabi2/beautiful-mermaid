@@ -144,13 +144,14 @@ function loadRustAddon(): TextMetricsRustAddon | null {
 }
 
 function tryRunRust<T>(fn: (addon: TextMetricsRustAddon) => T): T | undefined {
-  if (!isRustTextMetricsEnabled()) return undefined
+  const nativeRequired = isNativeRequired()
+  if (!nativeRequired && !isRustTextMetricsEnabled()) return undefined
   const addon = loadRustAddon()
   if (!addon) return undefined
   try {
     return fn(addon)
   } catch (error) {
-    if (isNativeRequired()) {
+    if (nativeRequired) {
       throw error
     }
     return undefined
