@@ -179,3 +179,45 @@ pub fn measure_text_width(text: String, font_size: f64, font_weight: f64) -> f64
 pub fn measure_multiline_text(text: String, font_size: f64, font_weight: f64) -> MultilineMetrics {
     measure_multiline_text_impl(&text, font_size, font_weight)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{Arc, Barrier},
+        thread,
+    };
+
+    use super::{is_emoji, measure_multiline_text_impl, measure_text_width_impl, strip_formatting_tags};
+
+    #[test]
+    fn concurrent_lazy_regex_init_is_safe() {
+        let workers = 16;
+        let barrier = Arc::new(Barrier::new(workers));
+        let mut handles = Vec::with_capacity(workers);
+
+        for index in 0..workers {
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let sample = if index % 2 == 0 {
+                    "<b>Hi</b> 😀"
+                } else {
+                    "<em>Rust</em> 中"
+                };
+
+                barrier.wait();
+
+                let plain = strip_formatting_tags(sample);
+                let width = measure_text_width_impl(&plain, 16.0, 400.0);
+                let metrics = measure_multiline_text_impl(sample, 16.0, 400.0);
+
+                assert!(width > 0.0);
+                assert_eq!(metrics.lines.len(), 1);
+                assert!(is_emoji("😀"));
+            }));
+        }
+
+        for handle in handles {
+            handle.join().expect("thread should not panic");
+        }
+    }
+}

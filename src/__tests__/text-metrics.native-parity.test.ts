@@ -20,7 +20,19 @@ type RustTextMetricsAddon = {
   }
 }
 
-const rustAddon = require('../../crates/beautiful-mermaid-napi/index.js') as RustTextMetricsAddon
+const rustAddon = (() => {
+  const previousRequireNative = process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+  process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = '1'
+  try {
+    return require('../../crates/beautiful-mermaid-napi/index.js') as RustTextMetricsAddon
+  } finally {
+    if (previousRequireNative === undefined) {
+      delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    } else {
+      process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = previousRequireNative
+    }
+  }
+})()
 
 function withTsFallback<T>(fn: () => T): T {
   const prev = process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
@@ -49,10 +61,8 @@ function tsMeasureMultilineText(text: string, fontSize: number, fontWeight: numb
 }
 
 describe('text metrics rust parity', () => {
-  it('requires native addon when native mode is enforced', () => {
-    if (process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE === '1') {
-      expect(rustAddon.__nativeLoaded).toBe(true)
-    }
+  it('requires native addon in parity suite', () => {
+    expect(rustAddon.__nativeLoaded).toBe(true)
   })
 
   it('keeps ASCII narrow text width equal and narrower than normal letters', () => {

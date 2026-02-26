@@ -87,11 +87,29 @@ function isRustTextMetricsEnabled(): boolean {
   return normalized !== '1' && normalized !== 'true'
 }
 
+function isNativeRequired(): boolean {
+  const flag = typeof process !== 'undefined'
+    ? process.env?.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    : undefined
+  if (!flag) return false
+  const normalized = flag.toLowerCase()
+  return normalized === '1' || normalized === 'true'
+}
+
+function createNativeRequiredError(cause: unknown): Error {
+  const error = new Error('Failed to load native addon while BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE=1')
+  ;(error as Error & { cause?: unknown }).cause = cause
+  return error
+}
+
 function loadRustAddon(): TextMetricsRustAddon | null {
   if (rustAddonCache !== undefined) return rustAddonCache
 
   const nodeRequire = getNodeRequire()
   if (!nodeRequire) {
+    if (isNativeRequired()) {
+      throw createNativeRequiredError(new Error('createRequire is unavailable'))
+    }
     rustAddonCache = null
     return rustAddonCache
   }
@@ -105,9 +123,15 @@ function loadRustAddon(): TextMetricsRustAddon | null {
     ) {
       rustAddonCache = addon as TextMetricsRustAddon
     } else {
+      if (isNativeRequired()) {
+        throw createNativeRequiredError(new Error('native addon exports are incomplete'))
+      }
       rustAddonCache = null
     }
-  } catch {
+  } catch (error) {
+    if (isNativeRequired()) {
+      throw createNativeRequiredError(error)
+    }
     rustAddonCache = null
   }
 
@@ -120,7 +144,10 @@ function tryRunRust<T>(fn: (addon: TextMetricsRustAddon) => T): T | undefined {
   if (!addon) return undefined
   try {
     return fn(addon)
-  } catch {
+  } catch (error) {
+    if (isNativeRequired()) {
+      throw error
+    }
     return undefined
   }
 }
