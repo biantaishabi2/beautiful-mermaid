@@ -2,7 +2,10 @@
  * Tests for text-metrics module — variable-width character measurement.
  */
 import { describe, it, expect } from 'bun:test'
-import { getCharWidth, measureTextWidth } from '../text-metrics'
+import { createRequire } from 'node:module'
+import { getCharWidth, measureTextWidth, measureMultilineText, LINE_HEIGHT_RATIO } from '../text-metrics'
+
+const require = createRequire(import.meta.url)
 
 // ============================================================================
 // Character width classification
@@ -218,6 +221,45 @@ describe('measureTextWidth', () => {
   })
 })
 
+describe('measureMultilineText', () => {
+  const fontSize = 16
+  const fontWeight = 500
+
+  it('returns full metrics for single line', () => {
+    const metrics = measureMultilineText('hello', fontSize, fontWeight)
+    expect(metrics.lines).toEqual(['hello'])
+    expect(metrics.lineHeight).toBe(fontSize * LINE_HEIGHT_RATIO)
+    expect(metrics.height).toBe(fontSize * LINE_HEIGHT_RATIO)
+    expect(metrics.width).toBeCloseTo(measureTextWidth('hello', fontSize, fontWeight), 6)
+  })
+
+  it('uses max width across lines and preserves empty lines', () => {
+    const metrics = measureMultilineText('a\n\nlonger line', fontSize, fontWeight)
+    const first = measureTextWidth('a', fontSize, fontWeight)
+    const second = measureTextWidth('', fontSize, fontWeight)
+    const third = measureTextWidth('longer line', fontSize, fontWeight)
+
+    expect(metrics.lines).toEqual(['a', '', 'longer line'])
+    expect(metrics.width).toBeCloseTo(Math.max(first, second, third), 6)
+    expect(metrics.height).toBe(fontSize * LINE_HEIGHT_RATIO * 3)
+  })
+
+  it('strips formatting tags before measuring line width', () => {
+    const withTags = measureMultilineText('<b>Hi</b> <em>Rust</em>', fontSize, fontWeight)
+    const plain = measureMultilineText('Hi Rust', fontSize, fontWeight)
+
+    expect(withTags.width).toBeCloseTo(plain.width, 6)
+    expect(withTags.height).toBe(plain.height)
+    expect(withTags.lines).toEqual(['<b>Hi</b> <em>Rust</em>'])
+  })
+
+  it('keeps trailing newline as an extra empty line', () => {
+    const metrics = measureMultilineText('line1\n', fontSize, fontWeight)
+    expect(metrics.lines).toEqual(['line1', ''])
+    expect(metrics.height).toBe(fontSize * LINE_HEIGHT_RATIO * 2)
+  })
+})
+
 // ============================================================================
 // Real-world examples
 // ============================================================================
@@ -252,5 +294,65 @@ describe('real-world text examples', () => {
     const unaccented = measureTextWidth('Udvozoljuk', fontSize, fontWeight)
     const percentDiff = Math.abs(width - unaccented) / unaccented
     expect(percentDiff).toBeLessThan(0.05)
+  })
+})
+
+describe('native loading semantics', () => {
+  it('throws in require-native mode even if fallback cache was initialized earlier', () => {
+    const addon = require('../../crates/beautiful-mermaid-napi/index.js') as { __nativeLoaded?: boolean }
+    if (addon.__nativeLoaded === true) return
+
+    const previousRequireNative = process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    const previousDisableNative = process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+
+    delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    delete process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+
+    try {
+      measureTextWidth('warmup', 13, 500)
+      process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = '1'
+      expect(() => measureTextWidth('must-fail', 13, 500))
+        .toThrow('Failed to load native addon while BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE=1')
+    } finally {
+      if (previousRequireNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = previousRequireNative
+      }
+
+      if (previousDisableNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE = previousDisableNative
+      }
+    }
+  })
+
+  it('does not silently fallback when require-native and disable-native are both set', () => {
+    const addon = require('../../crates/beautiful-mermaid-napi/index.js') as { __nativeLoaded?: boolean }
+    if (addon.__nativeLoaded === true) return
+
+    const previousRequireNative = process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    const previousDisableNative = process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+
+    process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = '1'
+    process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE = '1'
+
+    try {
+      expect(() => measureTextWidth('must-fail', 13, 500))
+        .toThrow('Failed to load native addon while BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE=1')
+    } finally {
+      if (previousRequireNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = previousRequireNative
+      }
+
+      if (previousDisableNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE = previousDisableNative
+      }
+    }
   })
 })
