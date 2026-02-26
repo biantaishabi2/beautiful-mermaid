@@ -2,7 +2,10 @@
  * Tests for text-metrics module — variable-width character measurement.
  */
 import { describe, it, expect } from 'bun:test'
+import { createRequire } from 'node:module'
 import { getCharWidth, measureTextWidth, measureMultilineText, LINE_HEIGHT_RATIO } from '../text-metrics'
+
+const require = createRequire(import.meta.url)
 
 // ============================================================================
 // Character width classification
@@ -291,5 +294,37 @@ describe('real-world text examples', () => {
     const unaccented = measureTextWidth('Udvozoljuk', fontSize, fontWeight)
     const percentDiff = Math.abs(width - unaccented) / unaccented
     expect(percentDiff).toBeLessThan(0.05)
+  })
+})
+
+describe('native loading semantics', () => {
+  it('throws in require-native mode even if fallback cache was initialized earlier', () => {
+    const addon = require('../../crates/beautiful-mermaid-napi/index.js') as { __nativeLoaded?: boolean }
+    if (addon.__nativeLoaded === true) return
+
+    const previousRequireNative = process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    const previousDisableNative = process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+
+    delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+    delete process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+
+    try {
+      measureTextWidth('warmup', 13, 500)
+      process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = '1'
+      expect(() => measureTextWidth('must-fail', 13, 500))
+        .toThrow('Failed to load native addon while BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE=1')
+    } finally {
+      if (previousRequireNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = previousRequireNative
+      }
+
+      if (previousDisableNative === undefined) {
+        delete process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE
+      } else {
+        process.env.BEAUTIFUL_MERMAID_TEXT_METRICS_DISABLE_NATIVE = previousDisableNative
+      }
+    }
   })
 })

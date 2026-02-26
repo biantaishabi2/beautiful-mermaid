@@ -103,7 +103,12 @@ function createNativeRequiredError(cause: unknown): Error {
 }
 
 function loadRustAddon(): TextMetricsRustAddon | null {
-  if (rustAddonCache !== undefined) return rustAddonCache
+  if (rustAddonCache !== undefined) {
+    if (rustAddonCache === null && isNativeRequired()) {
+      throw createNativeRequiredError(new Error('native addon is unavailable'))
+    }
+    return rustAddonCache
+  }
 
   const nodeRequire = getNodeRequire()
   if (!nodeRequire) {
