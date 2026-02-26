@@ -30,6 +30,7 @@ coverage/
 
 # N-API artifacts
 *.node
+target/
 crates/**/target/
 crates/**/index.d.ts
 crates/**/package-lock.json
