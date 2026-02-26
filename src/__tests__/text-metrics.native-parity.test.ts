@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import { getCharWidth, measureTextWidth, measureMultilineText, LINE_HEIGHT_RATIO } from '../text-metrics'
 
 const require = createRequire(import.meta.url)
+const NAPI_INDEX_JS_PATH = '../../crates/beautiful-mermaid-napi/index.js'
+const NAPI_INDEX_NODE_PATH = '../../crates/beautiful-mermaid-napi/index.node'
 
 type RustTextMetricsAddon = {
   __nativeLoaded: boolean
@@ -20,11 +22,24 @@ type RustTextMetricsAddon = {
   }
 }
 
+function purgeNapiModuleCache() {
+  const indexJs = require.resolve(NAPI_INDEX_JS_PATH)
+  delete require.cache[indexJs]
+
+  try {
+    const indexNode = require.resolve(NAPI_INDEX_NODE_PATH)
+    delete require.cache[indexNode]
+  } catch {
+    // fallback-only 环境下可能不存在 index.node。
+  }
+}
+
 const rustAddon = (() => {
   const previousRequireNative = process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
   process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE = '1'
   try {
-    return require('../../crates/beautiful-mermaid-napi/index.js') as RustTextMetricsAddon
+    purgeNapiModuleCache()
+    return require(NAPI_INDEX_JS_PATH) as RustTextMetricsAddon
   } finally {
     if (previousRequireNative === undefined) {
       delete process.env.BEAUTIFUL_MERMAID_NAPI_REQUIRE_NATIVE
